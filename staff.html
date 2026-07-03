@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="th" data-bs-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BGD-Link: Staff Portal</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+  <style>
+    body { font-family: 'Sarabun', -apple-system, BlinkMacSystemFont, sans-serif; background-color: #121212; }
+    .card { background-color: #1e1e1e; border: 1px solid #333; }
+    .media-thumb { height: 100px; object-fit: cover; width: 100%; border-radius: 4px; background-color: #000; }
+    .playlist-item { border-left: 4px solid #0d6efd; cursor: pointer; transition: 0.2s; }
+    .playlist-item:hover { background-color: #2b2b2b; }
+    .playlist-item.active { background-color: #0d6efd22; border-left: 4px solid #00d26a; }
+    #staffMainContent { display: none; }
+    .letter-spacing { letter-spacing: 2px; }
+  </style>
+</head>
+<body>
+
+  <!-- Modal สำหรับ Staff Login -->
+  <div class="modal fade" id="modalLogin" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+      <div class="modal-content bg-dark text-white border-success shadow-lg">
+        <div class="modal-header bg-success text-white justify-content-center">
+          <h5 class="modal-title fw-bold"><i class="fa-solid fa-user-shield me-2"></i>Staff Login</h5>
+        </div>
+        <div class="modal-body p-4">
+          <form id="frmStaffLogin" onsubmit="staffApp.handleLogin(event)">
+            <div class="mb-3">
+              <label class="form-label small text-muted">อีเมลผู้ใช้งาน (Email)</label>
+              <input type="email" id="loginEmail" class="form-control" required placeholder="staff@bgd.com" autofocus>
+            </div>
+            <div class="mb-3">
+              <label class="form-label small text-muted">รหัสผ่าน (Password)</label>
+              <input type="password" id="loginPass" class="form-control" required placeholder="••••">
+            </div>
+            <div id="loginError" class="alert alert-danger py-1 px-2 small text-center" style="display:none;"></div>
+            <button type="submit" class="btn btn-success w-100 fw-bold mt-2">เข้าสู่ระบบนำเสนอ</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ส่วนเนื้อหาหลักของ Staff Portal -->
+  <div id="staffMainContent">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark border-bottom border-secondary px-3">
+      <a class="navbar-brand fw-bold text-success" href="#"><i class="fa-solid fa-sliders me-2"></i>BGD-Link Staff Presenter</a>
+      <div class="ms-auto d-flex align-items-center">
+        <span class="text-light me-3"><i class="fa-solid fa-user me-1"></i> <span id="lblStaffName">เจ้าหน้าที่</span></span>
+        <button class="btn btn-sm btn-outline-light me-3" onclick="staffApp.generateQRForm()"><i class="fa-solid fa-qrcode me-1"></i> QR Form</button>
+        <button class="btn btn-sm btn-outline-danger" onclick="staffApp.logout()"><i class="fa-solid fa-right-from-bracket"></i> ออกจากระบบ</button>
+      </div>
+    </nav>
+
+    <div class="container-fluid py-4">
+      <div class="row g-4">
+        <!-- Left: Upload Media & Add Link -->
+        <div class="col-md-4">
+          <ul class="nav nav-pills nav-fill mb-2" id="mediaInputTabs" role="tablist">
+            <li class="nav-item">
+              <button class="nav-link active btn-sm" data-bs-toggle="tab" data-bs-target="#tab-upload" type="button">
+                <i class="fa-solid fa-cloud-arrow-up me-1"></i> อัปโหลดไฟล์
+              </button>
+            </li>
+            <li class="nav-item">
+              <button class="nav-link btn-sm" data-bs-toggle="tab" data-bs-target="#tab-link" type="button">
+                <i class="fa-solid fa-link me-1"></i> เพิ่มด้วยลิงก์ URL
+              </button>
+            </li>
+          </ul>
+
+          <div class="tab-content mb-4">
+            <!-- แท็บที่ 1: อัปโหลดไฟล์แบบเดิม -->
+            <div class="tab-pane fade show active" id="tab-upload">
+              <div class="card p-3 border-top-0 rounded-bottom border-success">
+                <form id="frmUpload" onsubmit="staffApp.uploadMedia(event)">
+                  <div class="mb-3"><label class="form-label small">เลือกไฟล์ (รูปภาพ, วิดีโอ, PDF)</label><input type="file" id="fileInput" class="form-control form-control-sm" required></div>
+                  <div class="row g-2 mb-3">
+                    <div class="col-6"><input type="text" id="txtStudentId" class="form-control form-control-sm" placeholder="รหัสนักศึกษา"></div>
+                    <div class="col-6"><input type="text" id="txtFaculty" class="form-control form-control-sm" placeholder="คณะ/สังกัด"></div>
+                  </div>
+                  <div id="uploadProgress" class="text-info small mb-2" style="display:none;"><i class="fa-solid fa-spinner fa-spin me-1"></i> กำลังส่งไปที่ GAS...</div>
+                  <button type="submit" class="btn btn-success btn-sm w-100 fw-bold"><i class="fa-solid fa-upload me-1"></i> เริ่มอัปโหลด</button>
+                </form>
+              </div>
+            </div>
+
+            <!-- แท็บที่ 2: เพิ่มจากลิงก์ (YouTube / Canva / PDF / Web) -->
+            <div class="tab-pane fade" id="tab-link">
+              <div class="card p-3 border-top-0 rounded-bottom border-info">
+                <form id="frmAddLink" onsubmit="staffApp.addLinkMedia(event)">
+                  <div class="mb-2">
+                    <label class="form-label small">วางลิงก์ (YouTube, Canva, PDF, Web URL)</label>
+                    <input type="url" id="txtExternalUrl" class="form-control form-control-sm" required placeholder="https://www.youtube.com/watch?v=...">
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label small">ตั้งชื่อรายการนำเสนอ (Title)</label>
+                    <input type="text" id="txtLinkTitle" class="form-control form-control-sm" required placeholder="เช่น คลิปแนะนำคณะ, สไลด์ Canva">
+                  </div>
+                  <div class="row g-2 mb-3">
+                    <div class="col-6"><input type="text" id="txtStudentIdLink" class="form-control form-control-sm" placeholder="รหัสนักศึกษา"></div>
+                    <div class="col-6"><input type="text" id="txtFacultyLink" class="form-control form-control-sm" placeholder="คณะ/สังกัด"></div>
+                  </div>
+                  <button type="submit" class="btn btn-info btn-sm w-100 fw-bold text-dark"><i class="fa-solid fa-plus me-1"></i> บันทึกลิงก์เข้าคลังสื่อ</button>
+                </form>
+              </div>
+            </div>
+          </div>
+
+          <div class="card p-3">
+            <h5 class="border-bottom pb-2 mb-3"><i class="fa-solid fa-folder-open me-2"></i>คลังสื่อระบบ (Media Library)</h5>
+            <div class="mb-2"><input type="text" id="txtFilter" class="form-control form-control-sm" placeholder="ค้นหาสื่อตามชื่อ, รหัส..." onkeyup="staffApp.filterMedia()"></div>
+            <div id="mediaLibraryGrid" class="row g-2" style="max-height: 400px; overflow-y: auto;"></div>
+          </div>
+        </div>
+
+        <!-- Center: Playlist -->
+        <div class="col-md-5">
+          <div class="card p-3 h-100">
+            <div class="d-flex justify-content-between align-items-center border-bottom pb-2 mb-3">
+              <h5 class="m-0"><i class="fa-solid fa-list-ol me-2"></i>รายการนำเสนอ (Playlist Queue)</h5>
+              <button class="btn btn-outline-danger btn-sm" onclick="staffApp.clearPlaylist()"><i class="fa-solid fa-trash me-1"></i> ล้างคิว</button>
+            </div>
+            <div id="playlistContainer" class="d-flex flex-column gap-2" style="max-height: 600px; overflow-y: auto;"></div>
+          </div>
+        </div>
+
+        <!-- Right: Control Panel & Display Code Info -->
+        <div class="col-md-3">
+          <!-- กล่องแสดง Display Code ของจอที่ได้รับมอบหมาย -->
+          <div class="card p-3 mb-3 border-warning bg-dark">
+            <h6 class="text-warning mb-2"><i class="fa-solid fa-key me-1"></i>รหัสเข้าจอที่รับผิดชอบ</h6>
+            <div id="myDisplayCodesContainer" class="d-flex flex-column gap-1 small">
+              <span class="text-muted">กำลังโหลดรหัสจอ...</span>
+            </div>
+          </div>
+
+          <div class="card p-3 mb-4 border-primary">
+            <h5 class="border-bottom pb-2 mb-3 text-primary"><i class="fa-solid fa-gamepad me-2"></i>ควบคุมการขึ้นจอ (Live Control)</h5>
+            <div class="mb-3">
+              <label class="form-label fw-bold">เลือกจอที่ต้องการควบคุม:</label>
+              <select id="selTargetDisplay" class="form-select"></select>
+            </div>
+
+            <div class="alert alert-dark border border-secondary text-center p-2 mb-3">
+              <small class="text-muted d-block">กำลังนำเสนอสื่อ ID:</small>
+              <strong id="currentPresentingTitle" class="text-success">ยังไม่มีการนำเสนอ</strong>
+            </div>
+
+            <div class="d-grid gap-2">
+              <button class="btn btn-primary btn-lg fw-bold" onclick="staffApp.presentCurrentSelected()"><i class="fa-solid fa-play me-2"></i> ขึ้นจอทันที (Present)</button>
+              <button class="btn btn-warning fw-bold text-dark" onclick="staffApp.pausePresentation()"><i class="fa-solid fa-pause me-2"></i> หยุดภาพชั่วคราว (Pause)</button>
+              <button class="btn btn-danger fw-bold" onclick="staffApp.stopPresentation()"><i class="fa-solid fa-stop me-2"></i> หยุดการนำเสนอ (Stop/Blank)</button>
+            </div>
+          </div>
+
+          <!-- รีโมทควบคุมสไลด์ -->
+          <div id="slideControllerCard" class="card p-3 border-info mb-3" style="display: none;">
+            <h6 class="text-info"><i class="fa-solid fa-left-right me-2"></i>ควบคุมหน้าสไลด์</h6>
+            <div class="d-flex justify-content-between align-items-center my-2">
+              <button class="btn btn-outline-light" onclick="staffApp.prevSlide()"><i class="fa-solid fa-chevron-left"></i> ก่อนหน้า</button>
+              <span id="slideCounter" class="fw-bold">1 / 1</span>
+              <button class="btn btn-outline-light" onclick="staffApp.nextSlide()">ถัดไป <i class="fa-solid fa-chevron-right"></i></button>
+            </div>
+          </div>
+          
+          <!-- รีโมทควบคุมวิดีโอ (Youtube / Media) -->
+          <div id="videoControllerCard" class="card p-3 border-danger mb-3" style="display: none;">
+            <h6 class="text-danger"><i class="fa-solid fa-clapperboard me-2"></i>ควบคุมวิดีโอ (Video Remote)</h6>
+            <div class="d-flex justify-content-between gap-1 my-2">
+              <button class="btn btn-outline-light btn-sm flex-fill" onclick="staffApp.sendVideoControl('seek_backward')" title="ถอยหลัง 10 วินาที">
+                <i class="fa-solid fa-backward-step"></i> -10วิ
+              </button>
+              <button class="btn btn-warning btn-sm flex-fill text-dark fw-bold" onclick="staffApp.sendVideoControl('pause')" title="หยุดชั่วคราว">
+                <i class="fa-solid fa-pause"></i> หยุด
+              </button>
+              <button class="btn btn-success btn-sm flex-fill fw-bold" onclick="staffApp.sendVideoControl('play')" title="เล่นต่อ">
+                <i class="fa-solid fa-play"></i> เล่น
+              </button>
+              <button class="btn btn-outline-light btn-sm flex-fill" onclick="staffApp.sendVideoControl('seek_forward')" title="ข้ามไปข้างหน้า 10 วินาที">
+                +10วิ <i class="fa-solid fa-forward-step"></i>
+              </button>
+            </div>
+            <small class="text-muted" style="font-size: 10px;">*หมายเหตุ: ฟังก์ชันข้ามเวลาทำงานได้สมบูรณ์ 100% กับลิงก์ YouTube</small>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- QR Form Modal -->
+  <div class="modal fade" id="modalQR" tabindex="-1">
+    <div class="modal-dialog modal-sm text-center">
+      <div class="modal-content bg-dark text-white p-3">
+        <h5>สแกนเพื่อส่งไฟล์ขึ้นจอ</h5>
+        <div id="qrCodeContainer" class="my-3 bg-white p-2 d-inline-block rounded"></div>
+        <input type="text" id="txtQRUrl" class="form-control form-control-sm text-center" readonly>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase Web SDK Compat v9 -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyBxgzQD4ZrC6qjwJJchjtKwieZ2OiM2XPM",
+      authDomain: "event-management-3c144.firebaseapp.com",
+      projectId: "event-management-3c144",
+      storageBucket: "event-management-3c144.firebasestorage.app",
+      messagingSenderId: "369684802425",
+      appId: "1:369684802425:web:631859dd809b60cbe09da8"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    class StaffApplication {
+      constructor() {
+        this.currentStaff = null;
+        this.gasUrl = "";
+        this.selectedMediaForPresent = null;
+        this.currentSlideIndex = 1;
+        this.loginModal = null;
+        this.init();
+      }
+
+      init() {
+        window.addEventListener("DOMContentLoaded", () => {
+          const savedStaff = sessionStorage.getItem("bgd_staff_session");
+          if (savedStaff) {
+            this.currentStaff = JSON.parse(savedStaff);
+            this.showMainPortal();
+          } else {
+            this.loginModal = new bootstrap.Modal(document.getElementById("modalLogin"));
+            this.loginModal.show();
+          }
+        });
+      }
+
+      async handleLogin(e) {
+        e.preventDefault();
+        const email = document.getElementById("loginEmail").value.trim();
+        const pass = document.getElementById("loginPass").value.trim();
+        const errDiv = document.getElementById("loginError");
+        errDiv.style.display = "none";
+
+        try {
+          const snapshot = await db.collection("users")
+            .where("email", "==", email)
+            .where("password", "==", pass)
+            .where("role", "==", "staff")
+            .get();
+
+          if (!snapshot.empty) {
+            const staffData = { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
+            this.currentStaff = staffData;
+            sessionStorage.setItem("bgd_staff_session", JSON.stringify(staffData));
+            
+            if (this.loginModal) this.loginModal.hide();
+            this.showMainPortal();
+          } else {
+            errDiv.textContent = "อีเมลหรือรหัสผ่านไม่ถูกต้อง!";
+            errDiv.style.display = "block";
+          }
+        } catch (err) {
+          errDiv.textContent = "ข้อผิดพลาดเชื่อมต่อฐานข้อมูล: " + err.message;
+          errDiv.style.display = "block";
+        }
+      }
+
+      async showMainPortal() {
+        document.getElementById("staffMainContent").style.display = "block";
+        document.getElementById("lblStaffName").textContent = `${this.currentStaff.fullName} (${this.currentStaff.email})`;
+        
+        await this.loadGASUrl();
+        this.setupRealtimeDisplays();
+        this.setupRealtimeMedia();
+        this.setupRealtimePlaylist();
+      }
+
+      async loadGASUrl() {
+        const doc = await db.collection("systemSettings").doc("global").get();
+        if (doc.exists && doc.data().gasUrl) this.gasUrl = doc.data().gasUrl;
+      }
+
+      setupRealtimeDisplays() {
+        const assigned = this.currentStaff.assignedDisplays || [];
+        
+        db.collection("displays").onSnapshot(snapshot => {
+          const select = document.getElementById("selTargetDisplay");
+          const codeContainer = document.getElementById("myDisplayCodesContainer");
+          
+          const currentVal = select.value;
+          select.innerHTML = '';
+          codeContainer.innerHTML = '';
+
+          if (assigned.length > 1) {
+            select.innerHTML += '<option value="ASSIGNED_ALL">🌟 ส่งขึ้นทุกจอที่รับผิดชอบ</option>';
+          }
+
+          let hasDisplay = false;
+          snapshot.forEach(doc => {
+            const d = doc.data();
+            if (assigned.length === 0 || assigned.includes(doc.id)) {
+              hasDisplay = true;
+              const opt = document.createElement("option");
+              opt.value = doc.id;
+              opt.textContent = `🖥️ ${d.name} (${doc.id})`;
+              select.appendChild(opt);
+
+              codeContainer.innerHTML += `
+                <div class="d-flex justify-content-between align-items-center bg-black p-1 px-2 rounded border border-secondary">
+                  <span>${d.name} (${doc.id}):</span>
+                  <strong class="text-warning letter-spacing fs-6">${d.displayCode || 'N/A'}</strong>
+                </div>
+              `;
+            }
+          });
+
+          if (!hasDisplay) {
+            codeContainer.innerHTML = `<span class="text-danger">คุณยังไม่ได้รับมอบหมายจอใดๆ จาก Admin</span>`;
+          }
+          if (currentVal) select.value = currentVal;
+        });
+      }
+
+      setupRealtimeMedia() {
+        db.collection("contents").orderBy("createdAt", "desc").onSnapshot(snapshot => {
+          this.renderMediaGrid(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        });
+      }
+
+      renderMediaGrid(mediaList) {
+        const grid = document.getElementById("mediaLibraryGrid");
+        grid.innerHTML = "";
+        mediaList.forEach(media => {
+          const col = document.createElement("div");
+          col.className = "col-6";
+          
+          let thumbUrl = "https://via.placeholder.com/150/000000/FFFFFF?text=FILE";
+          let badgeText = "FILE";
+          let badgeColor = "bg-secondary";
+
+          if (media.mimeType) {
+            if (media.mimeType.includes("image")) {
+              thumbUrl = media.directViewUrl || media.fileUrl;
+              badgeText = "IMG";
+              badgeColor = "bg-success";
+            } else if (media.mimeType.includes("video/youtube")) {
+              const ytMatch = media.fileUrl.match(/embed\/([^?&]+)/);
+              thumbUrl = ytMatch ? `https://img.youtube.com/vi/${ytMatch[1]}/hqdefault.jpg` : "https://via.placeholder.com/150/ff0000/FFFFFF?text=YouTube";
+              badgeText = "YT";
+              badgeColor = "bg-danger";
+            } else if (media.mimeType.includes("video")) {
+              thumbUrl = "https://via.placeholder.com/150/ffc107/000000?text=VIDEO";
+              badgeText = "VID";
+              badgeColor = "bg-warning text-dark";
+            } else if (media.mimeType.includes("pdf")) {
+              thumbUrl = "https://via.placeholder.com/150/dc3545/FFFFFF?text=PDF";
+              badgeText = "PDF";
+              badgeColor = "bg-danger";
+            } else if (media.mimeType.includes("canva")) {
+              thumbUrl = "https://via.placeholder.com/150/00c4cc/FFFFFF?text=Canva";
+              badgeText = "CANVA";
+              badgeColor = "bg-info text-dark";
+            } else if (media.mimeType.includes("html") || media.fileUrl?.startsWith("http")) {
+              thumbUrl = "https://via.placeholder.com/150/0d6efd/FFFFFF?text=WEB";
+              badgeText = "LINK";
+              badgeColor = "bg-primary";
+            }
+          }
+
+          col.innerHTML = `
+            <div class="card bg-dark border-secondary p-1 position-relative">
+              <span class="badge ${badgeColor} position-absolute top-0 end-0 m-1" style="font-size:9px;">${badgeText}</span>
+              <img src="${thumbUrl}" class="media-thumb mb-1" onerror="this.src='https://via.placeholder.com/150/333/fff?text=Media'">
+              <div class="text-truncate small fw-bold">${media.fileName}</div>
+              <div class="text-muted" style="font-size: 10px;">ID: ${media.studentId || '-'}</div>
+              <button class="btn btn-xs btn-outline-primary w-100 py-0 mt-1" style="font-size:12px;" onclick='staffApp.addToPlaylist(${JSON.stringify(media)})'><i class="fa-solid fa-plus"></i> ลงคิว</button>
+            </div>
+          `;
+          grid.appendChild(col);
+        });
+      }
+
+      setupRealtimePlaylist() {
+        db.collection("playlists").orderBy("order", "asc").onSnapshot(snapshot => {
+          const container = document.getElementById("playlistContainer");
+          container.innerHTML = "";
+          snapshot.forEach((doc, index) => {
+            const item = doc.data();
+            const div = document.createElement("div");
+            div.className = `card p-2 playlist-item d-flex flex-row justify-content-between align-items-center ${this.selectedMediaForPresent?.id === item.contentId ? 'active' : ''}`;
+            div.onclick = () => this.selectMediaToPresent(item);
+            div.innerHTML = `
+              <div class="d-flex align-items-center gap-2 overflow-hidden">
+                <span class="badge bg-secondary">${index + 1}</span>
+                <div class="text-truncate">
+                  <div class="fw-bold text-truncate" style="max-width: 200px;">${item.title}</div>
+                  <small class="text-muted">${item.type || 'Media'}</small>
+                </div>
+              </div>
+              <button class="btn btn-sm btn-outline-danger" onclick="event.stopPropagation(); staffApp.removeFromPlaylist('${doc.id}')"><i class="fa-solid fa-xmark"></i></button>
+            `;
+            container.appendChild(div);
+          });
+        });
+      }
+
+      async uploadMedia(e) {
+        e.preventDefault();
+        if (!this.gasUrl) return alert("กรุณาแจ้ง Admin ให้ตั้งค่า GAS URL ในระบบก่อนอัปโหลด");
+        const file = document.getElementById("fileInput").files[0];
+        if (!file) return;
+
+        const maxLimitMB = 25; 
+        if (file.size > maxLimitMB * 1024 * 1024) {
+          alert(`❌ ไฟล์มีขนาดใหญ่เกินไป (${(file.size / 1024 / 1024).toFixed(2)} MB)\n\nระบบอนุญาตให้อัปโหลดไฟล์สูงสุดไม่เกิน ${maxLimitMB} MB ต่อครั้งครับ หากเป็นไฟล์วิดีโอขนาดใหญ่ แนะนำให้อัปโหลดเข้า Drive/YouTube แล้วเพิ่มด้วยแท็บ "เพิ่มด้วยลิงก์ URL" แทนครับ`);
+          return;
+        }
+
+        const progress = document.getElementById("uploadProgress");
+        progress.style.display = "block";
+
+        const reader = new FileReader();
+        reader.onload = async () => {
+          const base64Data = reader.result.split(",")[1];
+          const payload = {
+            action: "uploadFile",
+            fileName: file.name,
+            mimeType: file.type || "application/octet-stream",
+            base64Data: base64Data,
+            studentId: document.getElementById("txtStudentId").value,
+            faculty: document.getElementById("txtFaculty").value,
+            uploaderId: this.currentStaff.email
+          };
+
+          try {
+            const response = await fetch(this.gasUrl, { method: "POST", body: JSON.stringify(payload) });
+            const resData = await response.json();
+            if (resData.status === "success") {
+              await db.collection("contents").add(resData.data);
+              alert("อัปโหลดไฟล์เสร็จสิ้น!");
+              e.target.reset();
+            } else throw new Error(resData.message);
+          } catch (err) { 
+            alert("เกิดข้อผิดพลาด: " + err.message); 
+          } finally { 
+            progress.style.display = "none"; 
+          }
+        };
+        reader.readAsDataURL(file);
+      }
+
+      async addLinkMedia(e) {
+        e.preventDefault();
+        const rawUrl = document.getElementById("txtExternalUrl").value.trim();
+        const title = document.getElementById("txtLinkTitle").value.trim();
+        const studentId = document.getElementById("txtStudentIdLink").value.trim() || "-";
+        const faculty = document.getElementById("txtFacultyLink").value.trim() || "-";
+
+        let processedUrl = rawUrl;
+        let mimeType = "text/html"; 
+        let iconType = "web";
+
+        if (rawUrl.includes("youtube.com") || rawUrl.includes("youtu.be")) {
+          mimeType = "video/youtube";
+          iconType = "youtube";
+          let videoId = "";
+          if (rawUrl.includes("youtu.be/")) {
+            videoId = rawUrl.split("youtu.be/")[1].split("?")[0];
+          } else if (rawUrl.includes("watch?v=")) {
+            videoId = rawUrl.split("watch?v=")[1].split("&")[0];
+          } else if (rawUrl.includes("/embed/")) {
+            videoId = rawUrl.split("/embed/")[1].split("?")[0];
+          }
+          processedUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0`;
+        } 
+        else if (rawUrl.includes("canva.com/design/")) {
+          mimeType = "application/vnd.canva";
+          iconType = "canva";
+          if (rawUrl.includes("/view")) {
+            processedUrl = rawUrl.split("/view")[0] + "/view?embed";
+          } else if (rawUrl.includes("/edit")) {
+            processedUrl = rawUrl.split("/edit")[0] + "/view?embed";
+          } else {
+            processedUrl = rawUrl + (rawUrl.endsWith("/") ? "view?embed" : "/view?embed");
+          }
+        } 
+        else if (rawUrl.toLowerCase().endsWith(".pdf") || rawUrl.includes("drive.google.com")) {
+          mimeType = "application/pdf";
+          iconType = "pdf";
+          if (rawUrl.includes("drive.google.com") && rawUrl.includes("/view")) {
+            processedUrl = rawUrl.replace("/view", "/preview");
+          }
+        }
+
+        const linkMetadata = {
+          fileId: "LINK_" + Date.now(),
+          fileName: title,
+          fileUrl: processedUrl,
+          directViewUrl: processedUrl,
+          mimeType: mimeType,
+          iconType: iconType,
+          size: 0,
+          uploaderId: `${this.currentStaff.email} (Link)`,
+          studentId: studentId,
+          faculty: faculty,
+          createdAt: new Date().toISOString()
+        };
+
+        try {
+          await db.collection("contents").add(linkMetadata);
+          alert("เพิ่มสื่อจากลิงก์เรียบร้อยแล้ว!");
+          e.target.reset();
+        } catch (err) {
+          alert("เกิดข้อผิดพลาดในการบันทึก: " + err.message);
+        }
+      }
+
+      async addToPlaylist(media) {
+        const snapshot = await db.collection("playlists").get();
+        await db.collection("playlists").add({
+          contentId: media.fileId || media.id, title: media.fileName, type: media.mimeType, url: media.directViewUrl || media.fileUrl, order: snapshot.size + 1
+        });
+      }
+
+      async removeFromPlaylist(id) { await db.collection("playlists").doc(id).delete(); }
+      async clearPlaylist() { if (confirm("ล้างคิวรายการนำเสนอทั้งหมด?")) { const snapshot = await db.collection("playlists").get(); snapshot.forEach(doc => doc.ref.delete()); } }
+
+      selectMediaToPresent(item) {
+        this.selectedMediaForPresent = item;
+        document.getElementById("currentPresentingTitle").textContent = item.title;
+        document.querySelectorAll(".playlist-item").forEach(el => el.classList.remove("active"));
+        
+        const slideCard = document.getElementById("slideControllerCard");
+        const videoCard = document.getElementById("videoControllerCard");
+        
+        const type = item.type ? item.type.toLowerCase() : "";
+        
+        // ✅ แก้ไข: ตรวจสอบประเภทไฟล์ให้ครบถ้วน
+        if (type.includes("presentation") || 
+            type.includes("pdf") || 
+            type.includes("google") || 
+            type.includes("slides") ||
+            item.title?.includes("Slide") ||
+            item.title?.includes("PDF")) {
+          // แสดงรีโมท Slide
+          slideCard.style.display = "block"; 
+          videoCard.style.display = "none";
+          this.currentSlideIndex = 1; 
+          this.updateSlideUI();
+          console.log("📊 โหมด Slide/PDF - สามารถใช้ next/previous ได้");
+        } 
+        else if (type.includes("video") || 
+                 type.includes("youtube") || 
+                 item.url?.includes("youtube") || 
+                 item.url?.includes("youtu.be")) {
+          // แสดงรีโมท Video
+          slideCard.style.display = "none"; 
+          videoCard.style.display = "block";
+          console.log("🎬 โหมด Video - สามารถใช้ play/pause ได้");
+        } 
+        else { 
+          // สื่ออื่นๆ ซ่อนรีโมททั้งหมด
+          slideCard.style.display = "none"; 
+          videoCard.style.display = "none";
+          console.log("📁 สื่อประเภทอื่น - ไม่มีการควบคุมเพิ่มเติม");
+        }
+      }
+
+      async presentCurrentSelected() {
+        if (!this.selectedMediaForPresent) return alert("กรุณาเลือกรายการจาก Playlist ก่อนกดนำเสนอ");
+        const target = document.getElementById("selTargetDisplay").value;
+        const payload = {
+          currentMediaTitle: this.selectedMediaForPresent.title, 
+          currentMediaType: this.selectedMediaForPresent.type, 
+          currentMediaUrl: this.selectedMediaForPresent.url, 
+          currentSlide: this.currentSlideIndex, 
+          status: "presenting", 
+          isPaused: false, 
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        };
+
+        if (target === "ASSIGNED_ALL") {
+          const assigned = this.currentStaff.assignedDisplays || [];
+          assigned.forEach(id => db.collection("displays").doc(id).update(payload));
+        } else { 
+          await db.collection("displays").doc(target).update(payload); 
+        }
+      }
+
+      async pausePresentation() {
+        const target = document.getElementById("selTargetDisplay").value;
+        if (target === "ASSIGNED_ALL") {
+          this.currentStaff.assignedDisplays.forEach(id => db.collection("displays").doc(id).update({ isPaused: true }));
+        } else { 
+          await db.collection("displays").doc(target).update({ isPaused: true }); 
+        }
+      }
+
+      async stopPresentation() {
+        const target = document.getElementById("selTargetDisplay").value;
+        const payload = { status: "normal", currentMediaTitle: "ไม่มีการนำเสนอ", currentMediaUrl: "" };
+        if (target === "ASSIGNED_ALL") {
+          this.currentStaff.assignedDisplays.forEach(id => db.collection("displays").doc(id).update(payload));
+        } else { 
+          await db.collection("displays").doc(target).update(payload); 
+        }
+      }
+
+      /**
+       * [แก้ไข] ส่งคำสั่งควบคุมวิดีโอแบบเรียลไทม์ไปยังหน้าจอ Display
+       */
+      async sendVideoControl(action) {
+        const target = document.getElementById("selTargetDisplay").value;
+        
+        // ✅ เช็คว่าเลือกจอแล้วหรือเปล่า
+        if (!target) {
+          alert("⚠️ กรุณาเลือกจอที่ต้องการควบคุมก่อน");
+          return;
+        }
+        
+        const controlPayload = {
+          mediaControl: {
+            action: action, // 'play', 'pause', 'seek_forward', 'seek_backward'
+            timestamp: Date.now() // ต้องส่ง timestamp เสมอเพื่อให้ display รู้ว่าเป็นคำสั่งใหม่
+          }
+        };
+
+        try {
+          if (target === "ASSIGNED_ALL") {
+            const assigned = this.currentStaff.assignedDisplays || [];
+            if (assigned.length === 0) {
+              alert("⚠️ ไม่มีจอที่ได้รับมอบหมาย");
+              return;
+            }
+            for (const id of assigned) {
+              await db.collection("displays").doc(id).update(controlPayload);
+            }
+            console.log(`✅ ส่งคำสั่ง ${action} ไปยังทั้งหมด`);
+          } else { 
+            await db.collection("displays").doc(target).update(controlPayload);
+            console.log(`✅ ส่งคำสั่ง ${action} ไปยัง ${target}`);
+          }
+        } catch (err) {
+          console.error("❌ เกิดข้อผิดพลาด:", err);
+          alert("ไม่สามารถส่งคำสั่งได้: " + err.message);
+        }
+      }
+
+      async prevSlide() { 
+        if (this.currentSlideIndex > 1) { 
+          this.currentSlideIndex--; 
+          this.updateSlideUI(); 
+          await this.presentCurrentSelected();
+          console.log("⬅️ ไปหน้าที่:", this.currentSlideIndex);
+        }
+      }
+      
+      async nextSlide() { 
+        this.currentSlideIndex++; 
+        this.updateSlideUI(); 
+        await this.presentCurrentSelected();
+        console.log("➡️ ไปหน้าที่:", this.currentSlideIndex);
+      }
+      
+      updateSlideUI() { 
+        document.getElementById("slideCounter").textContent = `หน้าที่ ${this.currentSlideIndex}`; 
+      }
+
+      generateQRForm() {
+        const url = window.location.origin + window.location.pathname.replace("staff.html", "index.html") + "?mode=upload";
+        document.getElementById("txtQRUrl").value = url;
+        const container = document.getElementById("qrCodeContainer");
+        container.innerHTML = "";
+        new QRCode(container, { text: url, width: 180, height: 180 });
+        new bootstrap.Modal(document.getElementById("modalQR")).show();
+      }
+
+      filterMedia() {
+        const keyword = document.getElementById("txtFilter").value.toLowerCase();
+        document.querySelectorAll("#mediaLibraryGrid .col-6").forEach(el => {
+          el.style.display = el.textContent.toLowerCase().includes(keyword) ? "block" : "none";
+        });
+      }
+
+      logout() {
+        sessionStorage.removeItem("bgd_staff_session");
+        window.location.reload();
+      }
+    }
+
+    const staffApp = new StaffApplication();
+  </script>
+</body>
+</html>
