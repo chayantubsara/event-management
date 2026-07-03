@@ -31,6 +31,24 @@
         max-height: 100vh;
         object-fit: contain;
     }
+    #displayContainer { 
+    width: 100vw; 
+    height: 100vh; 
+    display: flex; 
+    justify-content: center; /* จัดแนวนอนกลาง */
+    align-items: center;     /* จัดแนวตั้งกลาง */
+    position: relative; 
+    overflow: hidden;
+}
+
+/* บังคับให้ทุก Media อยู่กลางด้วย Flexbox */
+.fullscreen-media { 
+    max-width: 100%; 
+    max-height: 100%; 
+    object-fit: contain;
+  margin: auto;
+    /* ห้ามใช้ display: block หรือ float เพราะจะทำให้ Flex จัดตำแหน่งไม่ได้ */
+}
   </style>
 </head>
 <body>
@@ -270,96 +288,76 @@
       }
 
       renderMedia(type, url, slidePage) {
-        this.hideAllMedia();
-        document.getElementById("idleScreen").style.display = "none";
-        if (!type || !url || url.trim() === "") {
-          document.getElementById("idleScreen").style.display = "block"; return;
-        }
+  // 1. เคลียร์ทุกอย่างให้เรียบร้อยก่อน
+  this.hideAllMedia();
+  document.getElementById("idleScreen").style.display = "none";
 
-        const lowerType = type.toLowerCase();
-        const iframe = document.getElementById("mediaIframe");
+  // 2. ถ้าข้อมูลว่าง ให้แสดงหน้า Idle
+  if (!type || !url || url.trim() === "") {
+    document.getElementById("idleScreen").style.display = "block";
+    return;
+  }
 
-        // 1. รูปภาพ
-        if (lowerType.includes("image")) {
-          const img = document.getElementById("mediaImage");
-          let cleanUrl = url;
-          if (cleanUrl.includes("id=")) {
-            const fileId = cleanUrl.split("id=")[1].split("&")[0];
-            cleanUrl = `https://lh3.googleusercontent.com/d/${fileId}`;
-          }
-          if (!cleanUrl.includes("=s")) cleanUrl += "=s2560";
-          img.src = cleanUrl; 
-          img.style.display = "block";
-        } 
-        // 2. YouTube [แก้ไข: ใช้ YouTube IFrame API ที่ถูกต้อง]
-        else if (lowerType.includes("youtube") || url.includes("youtube.com") || url.includes("youtu.be")) {
-          let videoId = "";
-          if (url.includes("youtu.be/")) videoId = url.split("youtu.be/")[1].split("?")[0];
-          else if (url.includes("watch?v=")) videoId = url.split("watch?v=")[1].split("&")[0];
-          else if (url.includes("/embed/")) videoId = url.split("/embed/")[1].split("?")[0];
+  const lowerType = type.toLowerCase();
+  const iframe = document.getElementById("mediaIframe");
 
-          console.log("🎬 Loading YouTube video ID:", videoId);
-          
-          // ใช้ YouTube Player API ให้ถูกต้อง
-          const playerDiv = document.getElementById("player");
-          playerDiv.style.display = "block";
-          
-          // ล้าง player เก่าออก
-          this.ytPlayerReady = false;
-          this.ytPlayerInstance = null;
-          playerDiv.innerHTML = "";
-          
-          // สร้าง player ใหม่
-          this.ytPlayerInstance = new window.YT.Player(playerDiv, {
-            videoId: videoId,
-            width: "100%",
-            height: "100%",
-            playerVars: {
-              autoplay: 1,
-              controls: 0,
-              modestbranding: 1,
-              rel: 0,
-              fs: 0,
-              enablejsapi: 1
-            },
-            events: {
-              onReady: (event) => {
-                this.ytPlayerReady = true;
-                console.log("✅ YouTube Player Ready");
-                event.target.playVideo();
-              },
-              onError: (event) => {
-                console.error("❌ YouTube Player Error:", event.data);
-              }
-            }
-          });
-        }
-        // 3. วิดีโอจาก Drive
-        else if (lowerType.includes("video")) {
-          let videoUrl = url;
-          if (videoUrl.includes("id=")) {
-            const fileId = videoUrl.split("id=")[1].split("&")[0];
-            videoUrl = `https://drive.google.com/file/d/${fileId}/preview`;
-          } else if (videoUrl.includes("/view")) {
-            videoUrl = videoUrl.replace("/view", "/preview");
-          }
-          const driveEmbedUrl = videoUrl.includes("?") ? `${videoUrl}&autoplay=1` : `${videoUrl}?autoplay=1`;
-          iframe.src = driveEmbedUrl;
-          iframe.style.display = "block";
-        } 
-        // 4. Canva / Web URLs
-        else if (lowerType.includes("canva") || lowerType === "text/html" || url.startsWith("http")) {
-          iframe.src = url; 
-          iframe.style.display = "block";
-        } 
-        // 5. PDF
-        else if (lowerType.includes("pdf")) {
-          this.renderPDF(url, slidePage);
-        } else {
-          document.getElementById("idleScreen").style.display = "block";
-        }
+  // 3. จัดการแสดงผลตามประเภท
+  if (lowerType.includes("image")) {
+    const img = document.getElementById("mediaImage");
+    let cleanUrl = url;
+    if (cleanUrl.includes("id=")) {
+      const fileId = cleanUrl.split("id=")[1].split("&")[0];
+      cleanUrl = `https://lh3.googleusercontent.com/d/${fileId}`;
+    }
+    if (!cleanUrl.includes("=s")) cleanUrl += "=s2560";
+    
+    img.src = cleanUrl;
+    // ใช้ display: unset หรือ block ก็ได้ แต่ต้องมี CSS: .fullscreen-media { margin: auto; } ช่วย
+    img.style.display = "block"; 
+  } 
+  else if (lowerType.includes("youtube") || url.includes("youtube.com") || url.includes("youtu.be")) {
+    const playerDiv = document.getElementById("player");
+    playerDiv.style.display = "block";
+    
+    let videoId = "";
+    if (url.includes("youtu.be/")) videoId = url.split("youtu.be/")[1].split("?")[0];
+    else if (url.includes("watch?v=")) videoId = url.split("watch?v=")[1].split("&")[0];
+    else if (url.includes("/embed/")) videoId = url.split("/embed/")[1].split("?")[0];
+
+    this.ytPlayerReady = false;
+    this.ytPlayerInstance = null;
+    playerDiv.innerHTML = "";
+    
+    this.ytPlayerInstance = new window.YT.Player(playerDiv, {
+      videoId: videoId,
+      width: "100%",
+      height: "100%",
+      playerVars: { autoplay: 1, controls: 0, modestbranding: 1, rel: 0, fs: 0, enablejsapi: 1 },
+      events: {
+        onReady: (event) => { this.ytPlayerReady = true; event.target.playVideo(); }
       }
-
+    });
+  } 
+  else if (lowerType.includes("video")) {
+    const vid = document.getElementById("mediaVideo");
+    let videoUrl = url;
+    if (videoUrl.includes("id=")) {
+      const fileId = videoUrl.split("id=")[1].split("&")[0];
+      videoUrl = `https://drive.google.com/file/d/${fileId}/preview`;
+    } else if (videoUrl.includes("/view")) {
+      videoUrl = videoUrl.replace("/view", "/preview");
+    }
+    iframe.src = videoUrl.includes("?") ? `${videoUrl}&autoplay=1` : `${videoUrl}?autoplay=1`;
+    iframe.style.display = "block";
+  } 
+  else if (lowerType.includes("canva") || lowerType === "text/html" || url.startsWith("http")) {
+    iframe.src = url;
+    iframe.style.display = "block";
+  } 
+  else if (lowerType.includes("pdf")) {
+    this.renderPDF(url, slidePage);
+  }
+}
       /**
        * [แก้ไข] ตัวประมวลผลคำสั่งรีโมท - รองรับ YouTube API อย่างถูกต้อง
        */
