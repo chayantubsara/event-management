@@ -7,6 +7,7 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://www.youtube.com/iframe_api"></script>
   <style>
     body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #000; font-family: 'Sarabun', sans-serif; }
     #displayContainer { width: 100vw; height: 100vh; display: flex; justify-content: center; align-items: center; position: relative; }
@@ -101,10 +102,13 @@
         this.pdfDoc = null;
         this.loginModal = null;
         
-        // [ตัวแปรสถานะสำคัญ] เอาไว้จำว่ากำลังเล่นลิงก์อะไรอยู่ จะได้ไม่โหลดซ้ำเวลา Heartbeat อัปเดต!
         this.activeMediaUrl = null;
         this.activeMediaType = null;
         this.activeSlidePage = null;
+        
+        // [เพิ่มตัวแปรระบบควบคุมวิดีโอ]
+        this.ytPlayerInstance = null;
+        this.lastControlTimestamp = 0;
         
         this.init();
       }
@@ -208,18 +212,23 @@
             blankOverlay.style.display = "block"; return;
           } else { blankOverlay.style.display = "none"; }
 
-          // [แก้บั๊ก รีจอ] ตรวจสอบก่อนว่า URL เปลี่ยนไปจากเดิมจริงๆ หรือไม่!
+          // ==========================================
+          // [เพิ่มใหม่] ตรวจจับคำสั่งรีโมทวิดีโอ (Play, Pause, +/-10s)
+          // ==========================================
+          if (data.mediaControl && data.mediaControl.timestamp !== this.lastControlTimestamp) {
+            this.lastControlTimestamp = data.mediaControl.timestamp;
+            this.executeVideoCommand(data.mediaControl.action);
+          }
+
+          // จัดการเปลี่ยนสื่อหรือเปิดสไลด์ (State Tracking)
           if (data.status === "presenting" && data.currentMediaUrl) {
             const incomingSlide = data.currentSlide || 1;
-            
-            // ถ้าเป็นลิงก์เดิม และสไลด์หน้าเดิม ไม่ต้อง Re-render ปล่อยให้วิดีโอเล่นต่อไม่สะดุด!
             if (this.activeMediaUrl !== data.currentMediaUrl || 
                 this.activeMediaType !== data.currentMediaType || 
                 this.activeSlidePage !== incomingSlide) {
                 
               this.renderMedia(data.currentMediaType, data.currentMediaUrl, incomingSlide);
               
-              // บันทึกสถานะล่าสุดไว้
               this.activeMediaUrl = data.currentMediaUrl;
               this.activeMediaType = data.currentMediaType;
               this.activeSlidePage = incomingSlide;
@@ -228,7 +237,6 @@
               localStorage.setItem("last_media_url", data.currentMediaUrl);
             }
           } else {
-            // ถ้าสั่งหยุดนำเสนอ (Stop) ถึงจะล้างหน้าจอ
             if (this.activeMediaUrl !== null) {
               this.hideAllMedia();
               document.getElementById("idleScreen").style.display = "block";
@@ -246,16 +254,14 @@
       renderMedia(type, url, slidePage) {
         this.hideAllMedia();
         document.getElementById("idleScreen").style.display = "none";
-        
         if (!type || !url || url.trim() === "") {
-          document.getElementById("idleScreen").style.display = "block"; 
-          return;
+          document.getElementById("idleScreen").style.display = "block"; return;
         }
 
         const lowerType = type.toLowerCase();
         const iframe = document.getElementById("mediaIframe");
 
-        // 1. จัดการรูปภาพ (ความละเอียดสูง 2K/4K)
+        // 1. รูปภาพ
         if (lowerType.includes("image")) {
           const img = document.getElementById("mediaImage");
           let cleanUrl = url;
@@ -267,24 +273,33 @@
           img.src = cleanUrl; 
           img.style.display = "block";
         } 
-        // ==========================================
-        // 2. จัดการ YouTube (ถอด mute=1 ออก เพื่อให้เสียงดังอัตโนมัติ)
-        // ==========================================
+        // 2. YouTube [อัปเกรดให้เชื่อมต่อกับ YouTube IFrame API]
         else if (lowerType.includes("youtube") || url.includes("youtube.com") || url.includes("youtu.be")) {
           let videoId = "";
           if (url.includes("youtu.be/")) videoId = url.split("youtu.be/")[1].split("?")[0];
           else if (url.includes("watch?v=")) videoId = url.split("watch?v=")[1].split("&")[0];
           else if (url.includes("/embed/")) videoId = url.split("/embed/")[1].split("?")[0];
 
-          // ใช้ autoplay=1 อย่างเดียว (ไม่มี mute=1) เสียงจะออกทันทีที่ได้รับสัญญาณ
           const embedUrl = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&enablejsapi=1&rel=0&modestbranding=1`;
-          
           iframe.src = embedUrl;
           iframe.style.display = "block";
+          const initPlayer = () => {
+            if (window.YT && window.YT.Player) {
+              this.ytPlayerInstance = new window.YT.Player('mediaIframe');
+            } else {
+              setTimeout(initPlayer, 500); // ถ้ายังไม่โหลด ให้รออีก 0.5 วิ
+            }
+          };
+          initPlayer();
+
+          // เชื่อมต่อ YouTube API Object เข้ากับ Iframe ปัจจุบัน
+          setTimeout(() => {
+            if (window.YT && window.YT.Player) {
+              this.ytPlayerInstance = new window.YT.Player('mediaIframe');
+            }
+          }, 500);
         }
-        // ==========================================
-        // 3. จัดการวิดีโอจาก Google Drive (ถอด mute=1 ออก เพื่อให้เสียงดังอัตโนมัติ)
-        // ==========================================
+        // 3. วิดีโอจาก Drive
         else if (lowerType.includes("video")) {
           let videoUrl = url;
           if (videoUrl.includes("id=")) {
@@ -293,23 +308,54 @@
           } else if (videoUrl.includes("/view")) {
             videoUrl = videoUrl.replace("/view", "/preview");
           }
-          
-          // ใช้ autoplay=1 อย่างเดียว เพื่อปล่อยสตรีมเสียงออกลำโพง
           const driveEmbedUrl = videoUrl.includes("?") ? `${videoUrl}&autoplay=1` : `${videoUrl}?autoplay=1`;
-          
           iframe.src = driveEmbedUrl;
           iframe.style.display = "block";
         } 
-        // 4. จัดการ Canva และ Web URL ทั่วไป
+        // 4. Canva / Web URLs
         else if (lowerType.includes("canva") || lowerType === "text/html" || url.startsWith("http")) {
           iframe.src = url; 
           iframe.style.display = "block";
         } 
-        // 5. จัดการ PDF
+        // 5. PDF
         else if (lowerType.includes("pdf")) {
           this.renderPDF(url, slidePage);
         } else {
           document.getElementById("idleScreen").style.display = "block";
+        }
+      }
+
+      /**
+       * ตัวประมวลผลคำสั่งรีโมทวิดีโอ (Play, Pause, Seek +/-10s)
+       */
+      executeVideoCommand(action) {
+        // กรณีที่ 1: ควบคุมผ่าน YouTube IFrame API (ทำงานได้ 100%)
+        if (this.ytPlayerInstance && typeof this.ytPlayerInstance.getPlayerState === 'function') {
+          try {
+            if (action === 'play') {
+              this.ytPlayerInstance.playVideo();
+            } else if (action === 'pause') {
+              this.ytPlayerInstance.pauseVideo();
+            } else if (action === 'seek_forward') {
+              const curr = this.ytPlayerInstance.getCurrentTime();
+              this.ytPlayerInstance.seekTo(curr + 10, true);
+            } else if (action === 'seek_backward') {
+              const curr = this.ytPlayerInstance.getCurrentTime();
+              this.ytPlayerInstance.seekTo(Math.max(0, curr - 10), true);
+            }
+          } catch (err) {
+            console.warn("YouTube API Command Error:", err);
+          }
+        } 
+        // กรณีที่ 2: ควบคุมผ่าน HTML5 <video> (เผื่ออนาคตเปลี่ยนไปใช้ Direct Stream)
+        else {
+          const vid = document.getElementById("mediaVideo");
+          if (vid && vid.style.display === "block") {
+            if (action === 'play') vid.play();
+            else if (action === 'pause') vid.pause();
+            else if (action === 'seek_forward') vid.currentTime += 10;
+            else if (action === 'seek_backward') vid.currentTime = Math.max(0, vid.currentTime - 10);
+          }
         }
       }
 
@@ -321,8 +367,10 @@
         
         const iframe = document.getElementById("mediaIframe");
         iframe.style.display = "none";
-        // [แก้บั๊ก Unsafe attempt to load file://] เปลี่ยนไปใช้ about:blank เพื่อล้างสตรีมวิดีโอ/เสียง อย่างปลอดภัย
-        iframe.src = "about:blank"; 
+        iframe.src = "about:blank"; // ใช้ about:blank จะปลอดภัยที่สุด
+        
+        // ล้าง Instance ของ YouTube API ออกเมื่อเปลี่ยนสื่อ
+        this.ytPlayerInstance = null;
       }
 
       async renderPDF(url, pageNumber) {
@@ -341,16 +389,6 @@
         } catch (err) { console.error("PDF Render Error:", err); }
       }
 
-      hideAllMedia() {
-        document.getElementById("mediaImage").style.display = "none";
-        document.getElementById("mediaVideo").style.display = "none";
-        document.getElementById("mediaVideo").pause();
-        document.getElementById("pdfCanvas").style.display = "none";
-        
-        const iframe = document.getElementById("mediaIframe");
-        iframe.style.display = "none";
-        iframe.removeAttribute("src"); // ล้าง src เพื่อตัดสัญญาณวิดีโอ/เสียง
-      }
 
       setupOfflineFailover() {
         window.addEventListener("offline", () => {

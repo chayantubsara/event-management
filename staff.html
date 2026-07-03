@@ -132,7 +132,7 @@
         <div class="col-md-3">
           <!-- กล่องแสดง Display Code ของจอที่ได้รับมอบหมาย -->
           <div class="card p-3 mb-3 border-warning bg-dark">
-            <h6 class="text-warning mb-2"><i class="fa-solid fa-key me-1"></i>รหัสเข้าจอที่รับผิดชอบ (My Display Codes)</h6>
+            <h6 class="text-warning mb-2"><i class="fa-solid fa-key me-1"></i>รหัสเข้าจอที่รับผิดชอบ</h6>
             <div id="myDisplayCodesContainer" class="d-flex flex-column gap-1 small">
               <span class="text-muted">กำลังโหลดรหัสจอ...</span>
             </div>
@@ -157,13 +157,34 @@
             </div>
           </div>
 
-          <div id="slideControllerCard" class="card p-3 border-info" style="display: none;">
+          <!-- รีโมทควบคุมสไลด์ -->
+          <div id="slideControllerCard" class="card p-3 border-info mb-3" style="display: none;">
             <h6 class="text-info"><i class="fa-solid fa-left-right me-2"></i>ควบคุมหน้าสไลด์</h6>
             <div class="d-flex justify-content-between align-items-center my-2">
               <button class="btn btn-outline-light" onclick="staffApp.prevSlide()"><i class="fa-solid fa-chevron-left"></i> ก่อนหน้า</button>
               <span id="slideCounter" class="fw-bold">1 / 1</span>
               <button class="btn btn-outline-light" onclick="staffApp.nextSlide()">ถัดไป <i class="fa-solid fa-chevron-right"></i></button>
             </div>
+          </div>
+          
+          <!-- รีโมทควบคุมวิดีโอ (Youtube / Media) -->
+          <div id="videoControllerCard" class="card p-3 border-danger mb-3" style="display: none;">
+            <h6 class="text-danger"><i class="fa-solid fa-clapperboard me-2"></i>ควบคุมวิดีโอ (Video Remote)</h6>
+            <div class="d-flex justify-content-between gap-1 my-2">
+              <button class="btn btn-outline-light btn-sm flex-fill" onclick="staffApp.sendVideoControl('seek_backward')" title="ถอยหลัง 10 วินาที">
+                <i class="fa-solid fa-backward-step"></i> -10วิ
+              </button>
+              <button class="btn btn-warning btn-sm flex-fill text-dark fw-bold" onclick="staffApp.sendVideoControl('pause')" title="หยุดชั่วคราว">
+                <i class="fa-solid fa-pause"></i> หยุด
+              </button>
+              <button class="btn btn-success btn-sm flex-fill fw-bold" onclick="staffApp.sendVideoControl('play')" title="เล่นต่อ">
+                <i class="fa-solid fa-play"></i> เล่น
+              </button>
+              <button class="btn btn-outline-light btn-sm flex-fill" onclick="staffApp.sendVideoControl('seek_forward')" title="ข้ามไปข้างหน้า 10 วินาที">
+                +10วิ <i class="fa-solid fa-forward-step"></i>
+              </button>
+            </div>
+            <small class="text-muted" style="font-size: 10px;">*หมายเหตุ: ฟังก์ชันข้ามเวลาทำงานได้สมบูรณ์ 100% กับลิงก์ YouTube</small>
           </div>
         </div>
       </div>
@@ -332,7 +353,6 @@
               badgeText = "IMG";
               badgeColor = "bg-success";
             } else if (media.mimeType.includes("video/youtube")) {
-              // ถ้าเป็น Youtube ลองสกัด ID มาดึงภาพหน้าปกคลิป
               const ytMatch = media.fileUrl.match(/embed\/([^?&]+)/);
               thumbUrl = ytMatch ? `https://img.youtube.com/vi/${ytMatch[1]}/hqdefault.jpg` : "https://via.placeholder.com/150/ff0000/FFFFFF?text=YouTube";
               badgeText = "YT";
@@ -518,10 +538,29 @@
         this.selectedMediaForPresent = item;
         document.getElementById("currentPresentingTitle").textContent = item.title;
         document.querySelectorAll(".playlist-item").forEach(el => el.classList.remove("active"));
+        
         const slideCard = document.getElementById("slideControllerCard");
-        if (item.type && (item.type.includes("presentation") || item.type.includes("pdf"))) {
-          slideCard.style.display = "block"; this.currentSlideIndex = 1; this.updateSlideUI();
-        } else { slideCard.style.display = "none"; }
+        const videoCard = document.getElementById("videoControllerCard");
+        
+        const type = item.type ? item.type.toLowerCase() : "";
+
+        // ถ้าเป็น Slide / PDF เปิดรีโมทสไลด์
+        if (type.includes("presentation") || type.includes("pdf")) {
+          slideCard.style.display = "block"; 
+          videoCard.style.display = "none";
+          this.currentSlideIndex = 1; 
+          this.updateSlideUI();
+        } 
+        // ถ้าเป็น Video หรือ YouTube เปิดรีโมทวิดีโอ
+        else if (type.includes("video") || type.includes("youtube") || item.url?.includes("youtube") || item.url?.includes("youtu.be")) {
+          slideCard.style.display = "none"; 
+          videoCard.style.display = "block";
+        } 
+        // สื่ออื่นๆ ซ่อนรีโมททั้งหมด
+        else { 
+          slideCard.style.display = "none"; 
+          videoCard.style.display = "none";
+        }
       }
 
       async presentCurrentSelected() {
@@ -550,6 +589,26 @@
         if (target === "ASSIGNED_ALL") {
           this.currentStaff.assignedDisplays.forEach(id => db.collection("displays").doc(id).update(payload));
         } else { await db.collection("displays").doc(target).update(payload); }
+      }
+
+      /**
+       * ส่งคำสั่งควบคุมวิดีโอแบบเรียลไทม์ไปยังหน้าจอ Display
+       */
+      async sendVideoControl(action) {
+        const target = document.getElementById("selTargetDisplay").value;
+        const controlPayload = {
+          mediaControl: {
+            action: action, // 'play', 'pause', 'seek_forward', 'seek_backward'
+            timestamp: Date.now() // ใช้ timestamp ปัจจุบันเพื่อให้หน้าจอนับเป็นคำสั่งใหม่เสมอ
+          }
+        };
+
+        if (target === "ASSIGNED_ALL") {
+          const assigned = this.currentStaff.assignedDisplays || [];
+          assigned.forEach(id => db.collection("displays").doc(id).update(controlPayload));
+        } else { 
+          await db.collection("displays").doc(target).update(controlPayload); 
+        }
       }
 
       async prevSlide() { if (this.currentSlideIndex > 1) { this.currentSlideIndex--; this.updateSlideUI(); this.presentCurrentSelected(); } }
