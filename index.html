@@ -18,6 +18,8 @@
     .status-badge { position: absolute; bottom: 10px; right: 10px; font-size: 12px; color: rgba(255,255,255,0.3); z-index: 1000; }
     #displayContainer { display: none; }
     .letter-spacing { letter-spacing: 2px; }
+    /* YouTube Player Container */
+    #player { width: 100%; height: 100%; display: none; }
   </style>
 </head>
 <body>
@@ -60,7 +62,10 @@
     <video id="mediaVideo" class="fullscreen-media" autoplay muted style="display: none;"></video>
     <canvas id="pdfCanvas" class="fullscreen-media" style="display: none;"></canvas>
     
-    <!-- [อัปเกรดสำคัญ] แท็ก Iframe พร้อม Security Attributes แก้บั๊ก YouTube Error 153 -->
+    <!-- [แก้ไข] Container สำหรับ YouTube Player API -->
+    <div id="player"></div>
+    
+    <!-- Iframe สำหรับ Canva, Drive Video, Google Slides, Web URLs -->
     <iframe id="mediaIframe" style="width:100%; height:100%; border:none; display:none;" 
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen" 
             allowfullscreen 
@@ -86,13 +91,13 @@
 
   <script>
     const firebaseConfig = {
-  apiKey: "AIzaSyBxgzQD4ZrC6qjwJJchjtKwieZ2OiM2XPM",
-  authDomain: "event-management-3c144.firebaseapp.com",
-  projectId: "event-management-3c144",
-  storageBucket: "event-management-3c144.firebasestorage.app",
-  messagingSenderId: "369684802425",
-  appId: "1:369684802425:web:631859dd809b60cbe09da8"
-};
+      apiKey: "AIzaSyBxgzQD4ZrC6qjwJJchjtKwieZ2OiM2XPM",
+      authDomain: "event-management-3c144.firebaseapp.com",
+      projectId: "event-management-3c144",
+      storageBucket: "event-management-3c144.firebasestorage.app",
+      messagingSenderId: "369684802425",
+      appId: "1:369684802425:web:631859dd809b60cbe09da8"
+    };
     firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
 
@@ -106,8 +111,9 @@
         this.activeMediaType = null;
         this.activeSlidePage = null;
         
-        // [เพิ่มตัวแปรระบบควบคุมวิดีโอ]
+        // [แก้ไข] ตัวแปรควบคุม YouTube Player
         this.ytPlayerInstance = null;
+        this.ytPlayerReady = false;
         this.lastControlTimestamp = 0;
         
         this.init();
@@ -181,7 +187,6 @@
         setInterval(async () => {
           if (!this.displayId) return;
           try {
-            // การเขียนลง Firestore ตรงนี้ จะไปกระตุ้น onSnapshot ด้านล่าง (เป็นเหตุผลที่ต้องทำ State Tracking)
             await db.collection("displays").doc(this.displayId).set({
               lastHeartbeat: firebase.firestore.FieldValue.serverTimestamp()
             }, { merge: true });
@@ -213,20 +218,22 @@
           } else { blankOverlay.style.display = "none"; }
 
           // ==========================================
-          // [เพิ่มใหม่] ตรวจจับคำสั่งรีโมทวิดีโอ (Play, Pause, +/-10s)
+          // [แก้ไข] ตรวจจับคำสั่งรีโมทวิดีโอ
           // ==========================================
           if (data.mediaControl && data.mediaControl.timestamp !== this.lastControlTimestamp) {
             this.lastControlTimestamp = data.mediaControl.timestamp;
+            console.log("📡 รับคำสั่ง:", data.mediaControl.action);
             this.executeVideoCommand(data.mediaControl.action);
           }
 
-          // จัดการเปลี่ยนสื่อหรือเปิดสไลด์ (State Tracking)
+          // จัดการเปลี่ยนสื่อหรือเปลี่ยน Slide
           if (data.status === "presenting" && data.currentMediaUrl) {
             const incomingSlide = data.currentSlide || 1;
             if (this.activeMediaUrl !== data.currentMediaUrl || 
                 this.activeMediaType !== data.currentMediaType || 
                 this.activeSlidePage !== incomingSlide) {
                 
+              console.log(`📽️ Rendering: ${data.currentMediaType} | Slide: ${incomingSlide}`);
               this.renderMedia(data.currentMediaType, data.currentMediaUrl, incomingSlide);
               
               this.activeMediaUrl = data.currentMediaUrl;
@@ -273,31 +280,48 @@
           img.src = cleanUrl; 
           img.style.display = "block";
         } 
-        // 2. YouTube [อัปเกรดให้เชื่อมต่อกับ YouTube IFrame API]
+        // 2. YouTube [แก้ไข: ใช้ YouTube IFrame API ที่ถูกต้อง]
         else if (lowerType.includes("youtube") || url.includes("youtube.com") || url.includes("youtu.be")) {
           let videoId = "";
           if (url.includes("youtu.be/")) videoId = url.split("youtu.be/")[1].split("?")[0];
           else if (url.includes("watch?v=")) videoId = url.split("watch?v=")[1].split("&")[0];
           else if (url.includes("/embed/")) videoId = url.split("/embed/")[1].split("?")[0];
 
-          const embedUrl = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&enablejsapi=1&rel=0&modestbranding=1`;
-          iframe.src = embedUrl;
-          iframe.style.display = "block";
-          const initPlayer = () => {
-            if (window.YT && window.YT.Player) {
-              this.ytPlayerInstance = new window.YT.Player('mediaIframe');
-            } else {
-              setTimeout(initPlayer, 500); // ถ้ายังไม่โหลด ให้รออีก 0.5 วิ
+          console.log("🎬 Loading YouTube video ID:", videoId);
+          
+          // ใช้ YouTube Player API ให้ถูกต้อง
+          const playerDiv = document.getElementById("player");
+          playerDiv.style.display = "block";
+          
+          // ล้าง player เก่าออก
+          this.ytPlayerReady = false;
+          this.ytPlayerInstance = null;
+          playerDiv.innerHTML = "";
+          
+          // สร้าง player ใหม่
+          this.ytPlayerInstance = new window.YT.Player(playerDiv, {
+            videoId: videoId,
+            width: "100%",
+            height: "100%",
+            playerVars: {
+              autoplay: 1,
+              controls: 0,
+              modestbranding: 1,
+              rel: 0,
+              fs: 0,
+              enablejsapi: 1
+            },
+            events: {
+              onReady: (event) => {
+                this.ytPlayerReady = true;
+                console.log("✅ YouTube Player Ready");
+                event.target.playVideo();
+              },
+              onError: (event) => {
+                console.error("❌ YouTube Player Error:", event.data);
+              }
             }
-          };
-          initPlayer();
-
-          // เชื่อมต่อ YouTube API Object เข้ากับ Iframe ปัจจุบัน
-          setTimeout(() => {
-            if (window.YT && window.YT.Player) {
-              this.ytPlayerInstance = new window.YT.Player('mediaIframe');
-            }
-          }, 500);
+          });
         }
         // 3. วิดีโอจาก Drive
         else if (lowerType.includes("video")) {
@@ -326,35 +350,58 @@
       }
 
       /**
-       * ตัวประมวลผลคำสั่งรีโมทวิดีโอ (Play, Pause, Seek +/-10s)
+       * [แก้ไข] ตัวประมวลผลคำสั่งรีโมท - รองรับ YouTube API อย่างถูกต้อง
        */
       executeVideoCommand(action) {
-        // กรณีที่ 1: ควบคุมผ่าน YouTube IFrame API (ทำงานได้ 100%)
-        if (this.ytPlayerInstance && typeof this.ytPlayerInstance.getPlayerState === 'function') {
-          try {
-            if (action === 'play') {
+        const iframe = document.getElementById("mediaIframe");
+
+        // 1. YouTube Player
+        if (this.ytPlayerReady && this.ytPlayerInstance) {
+          console.log("📱 ส่งคำสั่งไปยัง YouTube:", action);
+          
+          switch(action) {
+            case 'play':
               this.ytPlayerInstance.playVideo();
-            } else if (action === 'pause') {
+              break;
+            case 'pause':
               this.ytPlayerInstance.pauseVideo();
-            } else if (action === 'seek_forward') {
-              const curr = this.ytPlayerInstance.getCurrentTime();
-              this.ytPlayerInstance.seekTo(curr + 10, true);
-            } else if (action === 'seek_backward') {
-              const curr = this.ytPlayerInstance.getCurrentTime();
-              this.ytPlayerInstance.seekTo(Math.max(0, curr - 10), true);
-            }
-          } catch (err) {
-            console.warn("YouTube API Command Error:", err);
+              break;
+            case 'seek_forward':
+              try {
+                const currentTime = this.ytPlayerInstance.getCurrentTime();
+                this.ytPlayerInstance.seekTo(currentTime + 10, true);
+              } catch(e) {
+                console.warn("ไม่สามารถ seek ได้:", e);
+              }
+              break;
+            case 'seek_backward':
+              try {
+                const currentTime = this.ytPlayerInstance.getCurrentTime();
+                this.ytPlayerInstance.seekTo(Math.max(0, currentTime - 10), true);
+              } catch(e) {
+                console.warn("ไม่สามารถ seek ได้:", e);
+              }
+              break;
           }
-        } 
-        // กรณีที่ 2: ควบคุมผ่าน HTML5 <video> (เผื่ออนาคตเปลี่ยนไปใช้ Direct Stream)
+        }
+        // 2. HTML5 Video
         else {
           const vid = document.getElementById("mediaVideo");
           if (vid && vid.style.display === "block") {
-            if (action === 'play') vid.play();
-            else if (action === 'pause') vid.pause();
-            else if (action === 'seek_forward') vid.currentTime += 10;
-            else if (action === 'seek_backward') vid.currentTime = Math.max(0, vid.currentTime - 10);
+            switch(action) {
+              case 'play':
+                vid.play();
+                break;
+              case 'pause':
+                vid.pause();
+                break;
+              case 'seek_forward':
+                vid.currentTime += 10;
+                break;
+              case 'seek_backward':
+                vid.currentTime = Math.max(0, vid.currentTime - 10);
+                break;
+            }
           }
         }
       }
@@ -364,13 +411,20 @@
         document.getElementById("mediaVideo").style.display = "none";
         document.getElementById("mediaVideo").pause();
         document.getElementById("pdfCanvas").style.display = "none";
+        document.getElementById("player").style.display = "none";
         
         const iframe = document.getElementById("mediaIframe");
         iframe.style.display = "none";
-        iframe.src = "about:blank"; // ใช้ about:blank จะปลอดภัยที่สุด
+        iframe.src = "about:blank";
         
-        // ล้าง Instance ของ YouTube API ออกเมื่อเปลี่ยนสื่อ
-        this.ytPlayerInstance = null;
+        // ล้าง YouTube Player
+        this.ytPlayerReady = false;
+        if (this.ytPlayerInstance) {
+          try {
+            this.ytPlayerInstance.destroy();
+          } catch(e) {}
+          this.ytPlayerInstance = null;
+        }
       }
 
       async renderPDF(url, pageNumber) {
@@ -388,7 +442,6 @@
           await page.render({ canvasContext: ctx, viewport: viewport }).promise;
         } catch (err) { console.error("PDF Render Error:", err); }
       }
-
 
       setupOfflineFailover() {
         window.addEventListener("offline", () => {
