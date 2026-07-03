@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="th" data-bs-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BGD-Link: Admin Portal</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+  <style>
+    body { font-family: 'Sarabun', sans-serif; background-color: #121212; }
+    .card { background-color: #1e1e1e; border: 1px solid #333; }
+    .status-dot { height: 12px; width: 12px; border-radius: 50%; display: inline-block; }
+    .status-online { background-color: #28a745; box-shadow: 0 0 8px #28a745; }
+    .status-offline { background-color: #dc3545; }
+    .table-dark { --bs-table-bg: #1e1e1e; }
+    /* ป้องกันไม่ให้เห็นระบบก่อนล็อกอิน */
+    #adminMainContent { display: none; }
+  </style>
+</head>
+<body>
+
+  <!-- Modal สำหรับ Admin Login (ไม่สามารถปิดได้ถ้าไม่ได้ล็อกอิน) -->
+  <div class="modal fade" id="modalLogin" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+      <div class="modal-content bg-dark text-white border-primary shadow-lg">
+        <div class="modal-header bg-primary text-white justify-content-center">
+          <h5 class="modal-title fw-bold"><i class="fa-solid fa-lock me-2"></i>Admin Login</h5>
+        </div>
+        <div class="modal-body p-4">
+          <form id="frmAdminLogin" onsubmit="adminApp.handleLogin(event)">
+            <div class="mb-3">
+              <label class="form-label small text-muted">Username</label>
+              <input type="text" id="loginUser" class="form-control" required placeholder="admin" autofocus>
+            </div>
+            <div class="mb-3">
+              <label class="form-label small text-muted">Password</label>
+              <input type="password" id="loginPass" class="form-control" required placeholder="••••">
+            </div>
+            <div id="loginError" class="alert alert-danger py-1 px-2 small text-center" style="display:none;"></div>
+            <button type="submit" class="btn btn-primary w-100 fw-bold mt-2">เข้าสู่ระบบ</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ส่วนเนื้อหาหลักของ Admin Portal -->
+  <div id="adminMainContent">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark border-bottom border-secondary px-3">
+      <a class="navbar-brand fw-bold text-primary" href="#"><i class="fa-solid fa-network-wired me-2"></i>BGD-Link Admin Portal</a>
+      <div class="ms-auto d-flex align-items-center">
+        <button id="btnThemeToggle" class="btn btn-outline-light btn-sm me-3"><i class="fa-solid fa-moon"></i></button>
+        <span class="badge bg-danger me-3" id="lblAdminName">ผู้ดูแลระบบ</span>
+        <button class="btn btn-sm btn-outline-danger" onclick="adminApp.logout()"><i class="fa-solid fa-right-from-bracket"></i> ออกจากระบบ</button>
+      </div>
+    </nav>
+
+    <div class="container-fluid py-4">
+      <!-- Emergency Section -->
+      <div class="row mb-4">
+        <div class="col-12">
+          <div class="card border-danger">
+            <div class="card-header bg-danger text-white fw-bold">
+              <i class="fa-solid fa-triangle-exclamation me-2"></i>ส่วนควบคุมฉุกเฉินระดับระบบ (Emergency Broadcast)
+            </div>
+            <div class="card-body d-flex flex-wrap gap-2 justify-content-between align-items-center">
+              <div class="w-50">
+                <input type="text" id="txtEmergencyMsg" class="form-control" placeholder="พิมพ์ข้อความประกาศฉุกเฉินทันทีเพื่อส่งไปยังทุกหน้าจอ...">
+              </div>
+              <div class="d-flex gap-2">
+                <button class="btn btn-danger fw-bold" onclick="adminApp.triggerEmergency()"><i class="fa-solid fa-bullhorn me-1"></i> ประกาศฉุกเฉินทั้งหมด</button>
+                <button class="btn btn-warning fw-bold text-dark" onclick="adminApp.forceBlankScreen()"><i class="fa-solid fa-desktop me-1"></i> สั่งตัดจอดำ (Blank Screen)</button>
+                <button class="btn btn-secondary fw-bold" onclick="adminApp.resetDisplays()"><i class="fa-solid fa-rotate-left me-1"></i> คืนค่าปกติทุกจอ</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <ul class="nav nav-tabs mb-3" id="adminTabs" role="tablist">
+        <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#displays-content"><i class="fa-solid fa-tv me-1"></i> จัดการหน้าจอ</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#staff-content"><i class="fa-solid fa-users me-1"></i> จัดการเจ้าหน้าที่</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#logs-content"><i class="fa-solid fa-list-check me-1"></i> ประวัติการใช้งาน</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#settings-content"><i class="fa-solid fa-gear me-1"></i> ตั้งค่าระบบ</button></li>
+      </ul>
+
+      <!-- Tab Contents -->
+      <div class="tab-content" id="adminTabsContent">
+        <!-- Display Monitoring Tab -->
+        <div class="tab-pane fade show active" id="displays-content">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="m-0">สถานะหน้าจอ และ รหัสเข้าจอ (Display Codes)</h5>
+            <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modalAddDisplay"><i class="fa-solid fa-plus me-1"></i> ลงทะเบียนหน้าจอใหม่</button>
+          </div>
+          <div class="row" id="displayGrid"></div>
+        </div>
+
+        <!-- Staff Management Tab -->
+        <div class="tab-pane fade" id="staff-content">
+          <div class="card p-3">
+            <div class="d-flex justify-content-between mb-3">
+              <h5>รายชื่อผู้ปฏิบัติงานในระบบ (Staff Users)</h5>
+              <button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#modalAddStaff"><i class="fa-solid fa-user-plus me-1"></i> เพิ่มเจ้าหน้าที่</button>
+            </div>
+            <table class="table table-dark table-hover">
+              <thead><tr><th>อีเมล</th><th>ชื่อ-นามสกุล</th><th>คณะ/หน่วยงาน</th><th>รหัสผ่าน</th><th>จัดการ</th></tr></thead>
+              <tbody id="staffTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Audit Logs Tab -->
+        <div class="tab-pane fade" id="logs-content">
+          <div class="card p-3">
+            <h5>ประวัติเหตุการณ์ในระบบ (System Audit Logs)</h5>
+            <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+              <table class="table table-dark table-sm table-striped">
+                <thead><tr><th>วัน-เวลา</th><th>ผู้ใช้งาน</th><th>เหตุการณ์</th><th>รายละเอียด</th></tr></thead>
+                <tbody id="logsTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- System Settings Tab -->
+        <div class="tab-pane fade" id="settings-content">
+          <div class="card p-4 col-md-6">
+            <h5>ตั้งค่าพารามิเตอร์ระบบ</h5>
+            <form id="frmSettings" onsubmit="adminApp.saveSettings(event)">
+              <div class="mb-3">
+                <label class="form-label">Google Apps Script Web App URL</label>
+                <input type="url" id="txtGasUrl" class="form-control" required placeholder="https://script.google.com/macros/s/AKfycbyxj8dbKNUaKTzz7uASA6EW_517YFetQsTAD92fguBx7L1VIumVcrokNYaPxPVK7fAcFQ/exec">
+              </div>
+              <div class="mb-3">
+                <label class="form-label">เวลาตัดการเชื่อมต่อออฟไลน์ (วินาที)</label>
+                <input type="number" id="numTimeout" class="form-control" value="30" required>
+              </div>
+              <button type="submit" class="btn btn-primary">บันทึกการตั้งค่า</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal เพิ่มหน้าจอ -->
+  <div class="modal fade" id="modalAddDisplay" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content bg-dark text-white border-secondary">
+        <div class="modal-header">
+          <h5 class="modal-title">ลงทะเบียนจอแสดงผลใหม่</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <form id="frmAddDisplay" onsubmit="adminApp.addDisplay(event)">
+            <div class="mb-3"><label class="form-label">รหัสหน้าจอ (Display ID)</label><input type="text" id="txtDispId" class="form-control" placeholder="เช่น DISP_002" required></div>
+            <div class="mb-3"><label class="form-label">ชื่อหน้าจอ (Display Name)</label><input type="text" id="txtDispName" class="form-control" placeholder="เช่น จอหอประชุม 2" required></div>
+            <div class="mb-3"><label class="form-label">กลุ่มหน้าจอ (Group)</label><input type="text" id="txtDispGroup" class="form-control" placeholder="เช่น อาคารเรียนรวม" required></div>
+            <button type="submit" class="btn btn-primary w-100">บันทึกและสุ่ม Display Code</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal เพิ่มเจ้าหน้าที่ -->
+  <div class="modal fade" id="modalAddStaff" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content bg-dark text-white border-secondary">
+        <div class="modal-header"><h5 class="modal-title">เพิ่มเจ้าหน้าที่ใหม่</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body">
+          <form id="frmAddStaff" onsubmit="adminApp.addStaff(event)">
+            <div class="mb-3"><label class="form-label">อีเมลเข้าใช้งาน</label><input type="email" id="txtStaffEmail" class="form-control" required></div>
+            <div class="mb-3"><label class="form-label">รหัสผ่านเริ่มต้น</label><input type="text" id="txtStaffPass" class="form-control" value="1234" required></div>
+            <div class="mb-3"><label class="form-label">ชื่อ-นามสกุล</label><input type="text" id="txtStaffName" class="form-control" required></div>
+            <div class="mb-3"><label class="form-label">คณะ/หน่วยงาน</label><input type="text" id="txtStaffFaculty" class="form-control" required></div>
+            <div class="mb-3"><label class="form-label">กำหนดรหัสหน้าจอที่รับผิดชอบ (คั่นด้วยจุลภาค ,)</label><input type="text" id="txtStaffDisplays" class="form-control" placeholder="เช่น DISP_001, DISP_002"></div>
+            <button type="submit" class="btn btn-success w-100">บันทึกข้อมูล</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase Web SDK Compat v9 -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+    const firebaseConfig = {
+  apiKey: "AIzaSyBxgzQD4ZrC6qjwJJchjtKwieZ2OiM2XPM",
+  authDomain: "event-management-3c144.firebaseapp.com",
+  projectId: "event-management-3c144",
+  storageBucket: "event-management-3c144.firebasestorage.app",
+  messagingSenderId: "369684802425",
+  appId: "1:369684802425:web:631859dd809b60cbe09da8"
+};
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    class AdminApplication {
+      constructor() {
+        this.currentAdmin = null;
+        this.loginModal = null;
+        this.init();
+      }
+
+      init() {
+        // ตรวจสอบ Session จาก SessionStorage
+        const savedAdmin = sessionStorage.getItem("bgd_admin_session");
+        if (savedAdmin) {
+          this.currentAdmin = JSON.parse(savedAdmin);
+          this.showMainPortal();
+        } else {
+          window.addEventListener("DOMContentLoaded", () => {
+            this.loginModal = new bootstrap.Modal(document.getElementById("modalLogin"));
+            this.loginModal.show();
+          });
+        }
+      }
+
+      async handleLogin(e) {
+        e.preventDefault();
+        const user = document.getElementById("loginUser").value.trim();
+        const pass = document.getElementById("loginPass").value.trim();
+        const errDiv = document.getElementById("loginError");
+        errDiv.style.display = "none";
+
+        try {
+          // ตรวจสอบจาก Firestore Collection 'users'
+          const snapshot = await db.collection("users")
+            .where("username", "==", user)
+            .where("password", "==", pass)
+            .where("role", "==", "admin")
+            .get();
+
+          if (!snapshot.empty) {
+            const adminData = { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
+            this.currentAdmin = adminData;
+            sessionStorage.setItem("bgd_admin_session", JSON.stringify(adminData));
+            
+            if (this.loginModal) this.loginModal.hide();
+            this.showMainPortal();
+          } else {
+            errDiv.textContent = "ชื่อผู้ใช้งานหรือรหัสผ่านไม่ถูกต้อง!";
+            errDiv.style.display = "block";
+          }
+        } catch (err) {
+          errDiv.textContent = "ข้อผิดพลาดเชื่อมต่อฐานข้อมูล: " + err.message;
+          errDiv.style.display = "block";
+        }
+      }
+
+      showMainPortal() {
+        document.getElementById("adminMainContent").style.display = "block";
+        document.getElementById("lblAdminName").textContent = this.currentAdmin.fullName || "ผู้ดูแลระบบ";
+        
+        // เริ่มทำงาน Realtime Data
+        this.setupRealtimeDisplays();
+        this.setupRealtimeStaff();
+        this.setupRealtimeLogs();
+        this.loadSettings();
+        this.setupThemeToggle();
+      }
+
+      setupRealtimeDisplays() {
+        db.collection("displays").onSnapshot(snapshot => {
+          const grid = document.getElementById("displayGrid");
+          grid.innerHTML = "";
+          const now = Date.now();
+          
+          snapshot.forEach(doc => {
+            const disp = { id: doc.id, ...doc.data() };
+            const lastHeartbeat = disp.lastHeartbeat ? disp.lastHeartbeat.toMillis() : 0;
+            const isOnline = (now - lastHeartbeat) < 30000;
+            const statusBadge = isOnline ? 
+              `<span class="badge bg-success"><span class="status-dot status-online me-1"></span>ออนไลน์</span>` : 
+              `<span class="badge bg-danger"><span class="status-dot status-offline me-1"></span>ออฟไลน์</span>`;
+
+            const card = document.createElement("div");
+            card.className = "col-md-4 mb-3";
+            card.innerHTML = `
+              <div class="card h-100 border-${isOnline ? 'success' : 'secondary'}">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                  <span class="fw-bold"><i class="fa-solid fa-desktop me-2"></i>${disp.name} (${disp.id})</span>
+                  ${statusBadge}
+                </div>
+                <div class="card-body">
+                  <div class="alert alert-warning py-1 px-2 mb-2 text-center">
+                    <small class="d-block text-dark">🔑 รหัสเข้าจอ (Display Code):</small>
+                    <strong class="fs-4 text-dark letter-spacing">${disp.displayCode || '000000'}</strong>
+                  </div>
+                  <p class="card-text mb-1"><small class="text-muted">กลุ่ม:</small> ${disp.group || 'ทั่วไป'}</p>
+                  <p class="card-text mb-1"><small class="text-muted">สถานะจอ:</small> <span class="text-info">${disp.status || 'ปกติ'}</span></p>
+                  <p class="card-text mb-3"><small class="text-muted">สื่อที่แสดงอยู่:</small> ${disp.currentMediaTitle || '-'}</p>
+                  <div class="d-flex justify-content-between">
+                    <button class="btn btn-sm btn-outline-warning" onclick="adminApp.togglePauseDisplay('${disp.id}', ${disp.isPaused})">
+                      <i class="fa-solid fa-${disp.isPaused ? 'play' : 'pause'}"></i> ${disp.isPaused ? 'ต่อ' : 'หยุดชั่วคราว'}
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="adminApp.deleteDisplay('${disp.id}')">
+                      <i class="fa-solid fa-trash"></i> ลบจอ
+                    </button>
+                  </div>
+                </div>
+              </div>
+            `;
+            grid.appendChild(card);
+          });
+        });
+      }
+
+      setupRealtimeStaff() {
+        db.collection("users").where("role", "==", "staff").onSnapshot(snapshot => {
+          const tbody = document.getElementById("staffTableBody");
+          tbody.innerHTML = "";
+          snapshot.forEach(doc => {
+            const user = doc.data();
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+              <td>${user.email}</td>
+              <td>${user.fullName}</td>
+              <td>${user.faculty || '-'}</td>
+              <td><span class="badge bg-secondary">${user.password}</span></td>
+              <td>
+                <button class="btn btn-sm btn-danger" onclick="adminApp.deleteStaff('${doc.id}')"><i class="fa-solid fa-user-xmark"></i></button>
+              </td>
+            `;
+            tbody.appendChild(tr);
+          });
+        });
+      }
+
+      setupRealtimeLogs() {
+        db.collection("auditLogs").orderBy("timestamp", "desc").limit(30).onSnapshot(snapshot => {
+          const tbody = document.getElementById("logsTableBody");
+          tbody.innerHTML = "";
+          snapshot.forEach(doc => {
+            const log = doc.data();
+            const dateStr = log.timestamp ? new Date(log.timestamp.toMillis()).toLocaleString('th-TH') : "-";
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+              <td><small>${dateStr}</small></td>
+              <td>${log.user || 'System'}</td>
+              <td><span class="badge bg-info">${log.action}</span></td>
+              <td>${log.details}</td>
+            `;
+            tbody.appendChild(tr);
+          });
+        });
+      }
+
+      async addDisplay(e) {
+        e.preventDefault();
+        const id = document.getElementById("txtDispId").value.trim();
+        const name = document.getElementById("txtDispName").value.trim();
+        const group = document.getElementById("txtDispGroup").value.trim();
+        
+        // สุ่ม Display Code 6 หลัก
+        const displayCode = Math.floor(100000 + Math.random() * 900000).toString();
+
+        await db.collection("displays").doc(id).set({
+          name, group, displayCode, status: "normal", isPaused: false, currentMediaTitle: "ไม่มีการนำเสนอ",
+          createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        this.logAudit("Create Display", `ลงทะเบียนจอ: ${name} (ID: ${id}, Code: ${displayCode})`);
+        bootstrap.Modal.getInstance(document.getElementById("modalAddDisplay")).hide();
+        e.target.reset();
+      }
+
+      async addStaff(e) {
+        e.preventDefault();
+        const email = document.getElementById("txtStaffEmail").value.trim();
+        const password = document.getElementById("txtStaffPass").value.trim();
+        const fullName = document.getElementById("txtStaffName").value.trim();
+        const faculty = document.getElementById("txtStaffFaculty").value.trim();
+        const displaysStr = document.getElementById("txtStaffDisplays").value.trim();
+        const assignedDisplays = displaysStr ? displaysStr.split(",").map(s => s.trim()) : [];
+
+        await db.collection("users").add({
+          email, password, fullName, faculty, assignedDisplays, role: "staff",
+          createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        this.logAudit("Add Staff", `เพิ่มเจ้าหน้าที่: ${email} (ดูแลจอ: ${assignedDisplays.join(",")})`);
+        bootstrap.Modal.getInstance(document.getElementById("modalAddStaff")).hide();
+        e.target.reset();
+      }
+
+      async deleteDisplay(id) {
+        if (confirm("ต้องการลบหน้าจอนี้ใช่หรือไม่?")) {
+          await db.collection("displays").doc(id).delete();
+          this.logAudit("Delete Display", `ลบหน้าจอ ID: ${id}`);
+        }
+      }
+
+      async deleteStaff(id) {
+        if (confirm("ต้องการลบบัญชีเจ้าหน้าที่คนนี้หรือไม่?")) {
+          await db.collection("users").doc(id).delete();
+          this.logAudit("Delete Staff", `ลบบัญชีเจ้าหน้าที่ ID: ${id}`);
+        }
+      }
+
+      async togglePauseDisplay(id, currentPausedState) {
+        await db.collection("displays").doc(id).update({ isPaused: !currentPausedState });
+        this.logAudit("Toggle Pause", `เปลี่ยนสถานะหยุดชั่วคราวจอ ID: ${id}`);
+      }
+
+      async triggerEmergency() {
+        const msg = document.getElementById("txtEmergencyMsg").value || "ประกาศฉุกเฉินจากผู้ดูแลระบบ!";
+        if (confirm(`คุณต้องการส่งประกาศฉุกเฉินไปทุกจอใช่หรือไม่?`)) {
+          const snapshot = await db.collection("displays").get();
+          snapshot.forEach(doc => doc.ref.update({ status: "emergency", emergencyMessage: msg }));
+          this.logAudit("Emergency Broadcast", `ประกาศฉุกเฉิน: ${msg}`);
+        }
+      }
+
+      async forceBlankScreen() {
+        if (confirm("ต้องการสั่งปิดจอดำ (Blank Screen) ทุกจอหรือไม่?")) {
+          const snapshot = await db.collection("displays").get();
+          snapshot.forEach(doc => doc.ref.update({ status: "blank" }));
+          this.logAudit("Force Blank", "สั่งตัดจอดำทุกหน้าจอ");
+        }
+      }
+
+      async resetDisplays() {
+        if (confirm("ต้องการคืนค่าสถานะทุกจอเป็นปกติใช่หรือไม่?")) {
+          const snapshot = await db.collection("displays").get();
+          snapshot.forEach(doc => doc.ref.update({ status: "normal", emergencyMessage: "", isPaused: false }));
+          this.logAudit("Reset Displays", "คืนค่าปกติทุกหน้าจอ");
+        }
+      }
+
+      async loadSettings() {
+        const doc = await db.collection("systemSettings").doc("global").get();
+        if (doc.exists) {
+          document.getElementById("txtGasUrl").value = doc.data().gasUrl || "";
+          document.getElementById("numTimeout").value = doc.data().heartbeatTimeout || 30;
+        }
+      }
+
+      async saveSettings(e) {
+        e.preventDefault();
+        const gasUrl = document.getElementById("txtGasUrl").value;
+        const heartbeatTimeout = parseInt(document.getElementById("numTimeout").value);
+        await db.collection("systemSettings").doc("global").set({ gasUrl, heartbeatTimeout }, { merge: true });
+        alert("บันทึกการตั้งค่าระบบเรียบร้อยแล้ว");
+        this.logAudit("Update Settings", "อัปเดต GAS URL และระบบ");
+      }
+
+      logAudit(action, details) {
+        db.collection("auditLogs").add({
+          user: `${this.currentAdmin.username} (Admin)`,
+          action, details, timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      }
+
+      setupThemeToggle() {
+        document.getElementById("btnThemeToggle").addEventListener("click", () => {
+          const html = document.documentElement;
+          html.setAttribute("data-bs-theme", html.getAttribute("data-bs-theme") === "dark" ? "light" : "dark");
+        });
+      }
+
+      logout() {
+        sessionStorage.removeItem("bgd_admin_session");
+        window.location.reload();
+      }
+    }
+
+    const adminApp = new AdminApplication();
+  </script>
+</body>
+</html>

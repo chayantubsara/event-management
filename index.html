@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BGD-Link: Display Screen</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <style>
+    body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #000; font-family: 'Sarabun', sans-serif; }
+    #displayContainer { width: 100vw; height: 100vh; display: flex; justify-content: center; align-items: center; position: relative; }
+    .fullscreen-media { max-width: 100%; max-height: 100%; object-fit: contain; }
+    #emergencyOverlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: red; color: white; display: none; z-index: 9999; justify-content: center; align-items: center; flex-direction: column; text-align: center; padding: 2rem; }
+    #blankOverlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: black; display: none; z-index: 9998; }
+    #idleScreen { text-align: center; color: #555; }
+    .status-badge { position: absolute; bottom: 10px; right: 10px; font-size: 12px; color: rgba(255,255,255,0.3); z-index: 1000; }
+    #displayContainer { display: none; }
+    .letter-spacing { letter-spacing: 2px; }
+  </style>
+</head>
+<body>
+
+  <!-- Modal สำหรับ Display Login -->
+  <div class="modal fade" id="modalDisplayLogin" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+      <div class="modal-content bg-dark text-white border-warning shadow-lg">
+        <div class="modal-header bg-warning text-dark justify-content-center">
+          <h5 class="modal-title fw-bold"><i class="fa-solid fa-tv me-2"></i>Connect Display Screen</h5>
+        </div>
+        <div class="modal-body p-4">
+          <form id="frmDisplayLogin" onsubmit="displayApp.handleDisplayLogin(event)">
+            <div class="mb-3">
+              <label class="form-label small text-muted">อีเมลเจ้าหน้าที่ (Staff Email)</label>
+              <input type="email" id="loginStaffEmail" class="form-control" required placeholder="staff@bgd.com" autofocus>
+            </div>
+            <div class="mb-3">
+              <label class="form-label small text-muted">รหัสจอแสดงผล 6 หลัก (Display Code)</label>
+              <input type="text" id="loginDispCode" class="form-control text-center fs-4 fw-bold letter-spacing" required placeholder="000000" maxlength="6">
+            </div>
+            <div id="loginError" class="alert alert-danger py-1 px-2 small text-center" style="display:none;"></div>
+            <button type="submit" class="btn btn-warning w-100 fw-bold text-dark mt-2">เชื่อมต่อหน้าจอ</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- จอแสดงผลหลัก -->
+  <div id="displayContainer">
+    <div id="idleScreen">
+      <i class="fa-solid fa-tv fa-5x mb-3"></i>
+      <h2 id="dispNameLabel" class="text-light">BGD-Link Ready</h2>
+      <p>รอรับสัญญาณการนำเสนอจากจุดควบคุม...</p>
+      <button class="btn btn-outline-secondary btn-sm mt-3" onclick="displayApp.goFullscreen()"><i class="fa-solid fa-expand me-1"></i> แสดงผลเต็มจอ (Fullscreen)</button>
+    </div>
+
+    <img id="mediaImage" class="fullscreen-media" style="display: none;">
+    <video id="mediaVideo" class="fullscreen-media" autoplay muted style="display: none;"></video>
+    <canvas id="pdfCanvas" class="fullscreen-media" style="display: none;"></canvas>
+    
+    <!-- [อัปเกรดสำคัญ] แท็ก Iframe พร้อม Security Attributes แก้บั๊ก YouTube Error 153 -->
+    <iframe id="mediaIframe" style="width:100%; height:100%; border:none; display:none;" 
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen" 
+            allowfullscreen 
+            referrerpolicy="strict-origin-when-cross-origin"></iframe>
+  </div>
+
+  <div id="emergencyOverlay">
+    <i class="fa-solid fa-triangle-exclamation fa-5x mb-4 animate-bounce"></i>
+    <h1 class="display-3 fw-bold">ประกาศฉุกเฉิน</h1>
+    <h2 id="emergencyText" class="mt-3">ข้อความแจ้งเตือนจากระบบ</h2>
+  </div>
+
+  <div id="blankOverlay"></div>
+
+  <div class="status-badge" id="badgeContainer" style="display:none;">
+    <span id="connectionStatus">● Online</span> | ID: <span id="lblDispId">-</span>
+  </div>
+
+  <!-- Firebase Web SDK Compat v9 -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+    const firebaseConfig = {
+  apiKey: "AIzaSyBxgzQD4ZrC6qjwJJchjtKwieZ2OiM2XPM",
+  authDomain: "event-management-3c144.firebaseapp.com",
+  projectId: "event-management-3c144",
+  storageBucket: "event-management-3c144.firebasestorage.app",
+  messagingSenderId: "369684802425",
+  appId: "1:369684802425:web:631859dd809b60cbe09da8"
+};
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    class DisplayApplication {
+      constructor() {
+        this.displayId = null;
+        this.pdfDoc = null;
+        this.loginModal = null;
+        
+        // [ตัวแปรสถานะสำคัญ] เอาไว้จำว่ากำลังเล่นลิงก์อะไรอยู่ จะได้ไม่โหลดซ้ำเวลา Heartbeat อัปเดต!
+        this.activeMediaUrl = null;
+        this.activeMediaType = null;
+        this.activeSlidePage = null;
+        
+        this.init();
+      }
+
+      init() {
+        window.addEventListener("DOMContentLoaded", () => {
+          const savedDispId = sessionStorage.getItem("bgd_active_display_id");
+          if (savedDispId) {
+            this.displayId = savedDispId;
+            this.startDisplayScreen();
+          } else {
+            this.loginModal = new bootstrap.Modal(document.getElementById("modalDisplayLogin"));
+            this.loginModal.show();
+          }
+        });
+      }
+
+      async handleDisplayLogin(e) {
+        e.preventDefault();
+        const staffEmail = document.getElementById("loginStaffEmail").value.trim();
+        const dispCode = document.getElementById("loginDispCode").value.trim();
+        const errDiv = document.getElementById("loginError");
+        errDiv.style.display = "none";
+
+        try {
+          const dispSnap = await db.collection("displays").where("displayCode", "==", dispCode).get();
+          if (dispSnap.empty) {
+            errDiv.textContent = "รหัสจอ (Display Code) ไม่ถูกต้อง!";
+            errDiv.style.display = "block"; return;
+          }
+          const targetDisplayDoc = dispSnap.docs[0];
+          const targetDisplayId = targetDisplayDoc.id;
+
+          const staffSnap = await db.collection("users").where("email", "==", staffEmail).where("role", "==", "staff").get();
+          if (staffSnap.empty) {
+            errDiv.textContent = "ไม่พบอีเมลเจ้าหน้าที่ระบบนี้!";
+            errDiv.style.display = "block"; return;
+          }
+          const staffData = staffSnap.docs[0].data();
+          const assigned = staffData.assignedDisplays || [];
+
+          if (assigned.length > 0 && !assigned.includes(targetDisplayId)) {
+            errDiv.textContent = "คุณไม่ได้รับสิทธิ์ (Assign) ให้ดูแลหน้าจอนี้!";
+            errDiv.style.display = "block"; return;
+          }
+
+          this.displayId = targetDisplayId;
+          sessionStorage.setItem("bgd_active_display_id", targetDisplayId);
+          if (this.loginModal) this.loginModal.hide();
+          this.startDisplayScreen();
+          this.goFullscreen();
+
+        } catch (err) {
+          errDiv.textContent = "ข้อผิดพลาดระบบ: " + err.message;
+          errDiv.style.display = "block";
+        }
+      }
+
+      startDisplayScreen() {
+        document.getElementById("displayContainer").style.display = "flex";
+        document.getElementById("badgeContainer").style.display = "block";
+        document.getElementById("lblDispId").textContent = this.displayId;
+        
+        this.setupHeartbeat();
+        this.setupRealtimeSync();
+        this.setupOfflineFailover();
+      }
+
+      setupHeartbeat() {
+        setInterval(async () => {
+          if (!this.displayId) return;
+          try {
+            // การเขียนลง Firestore ตรงนี้ จะไปกระตุ้น onSnapshot ด้านล่าง (เป็นเหตุผลที่ต้องทำ State Tracking)
+            await db.collection("displays").doc(this.displayId).set({
+              lastHeartbeat: firebase.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+            document.getElementById("connectionStatus").style.color = "#28a745";
+            document.getElementById("connectionStatus").textContent = "● Online";
+          } catch (e) {
+            document.getElementById("connectionStatus").style.color = "#dc3545";
+            document.getElementById("connectionStatus").textContent = "● Offline (Cached)";
+          }
+        }, 10000);
+      }
+
+      setupRealtimeSync() {
+        db.collection("displays").doc(this.displayId).onSnapshot(doc => {
+          if (!doc.exists) return;
+          const data = doc.data();
+
+          if (data.name) document.getElementById("dispNameLabel").textContent = data.name;
+
+          const emOverlay = document.getElementById("emergencyOverlay");
+          if (data.status === "emergency") {
+            document.getElementById("emergencyText").textContent = data.emergencyMessage || "โปรดอพยพออกจากพื้นที่ในทันที";
+            emOverlay.style.display = "flex"; return;
+          } else { emOverlay.style.display = "none"; }
+
+          const blankOverlay = document.getElementById("blankOverlay");
+          if (data.status === "blank" || data.isPaused) {
+            blankOverlay.style.display = "block"; return;
+          } else { blankOverlay.style.display = "none"; }
+
+          // [แก้บั๊ก รีจอ] ตรวจสอบก่อนว่า URL เปลี่ยนไปจากเดิมจริงๆ หรือไม่!
+          if (data.status === "presenting" && data.currentMediaUrl) {
+            const incomingSlide = data.currentSlide || 1;
+            
+            // ถ้าเป็นลิงก์เดิม และสไลด์หน้าเดิม ไม่ต้อง Re-render ปล่อยให้วิดีโอเล่นต่อไม่สะดุด!
+            if (this.activeMediaUrl !== data.currentMediaUrl || 
+                this.activeMediaType !== data.currentMediaType || 
+                this.activeSlidePage !== incomingSlide) {
+                
+              this.renderMedia(data.currentMediaType, data.currentMediaUrl, incomingSlide);
+              
+              // บันทึกสถานะล่าสุดไว้
+              this.activeMediaUrl = data.currentMediaUrl;
+              this.activeMediaType = data.currentMediaType;
+              this.activeSlidePage = incomingSlide;
+              
+              localStorage.setItem("last_media_type", data.currentMediaType);
+              localStorage.setItem("last_media_url", data.currentMediaUrl);
+            }
+          } else {
+            // ถ้าสั่งหยุดนำเสนอ (Stop) ถึงจะล้างหน้าจอ
+            if (this.activeMediaUrl !== null) {
+              this.hideAllMedia();
+              document.getElementById("idleScreen").style.display = "block";
+              this.activeMediaUrl = null;
+              this.activeMediaType = null;
+              this.activeSlidePage = null;
+            }
+          }
+        }, error => {
+          console.error("Firebase Realtime Error:", error);
+          this.loadOfflineCache();
+        });
+      }
+
+      renderMedia(type, url, slidePage) {
+        this.hideAllMedia();
+        document.getElementById("idleScreen").style.display = "none";
+        
+        if (!type || !url || url.trim() === "") {
+          document.getElementById("idleScreen").style.display = "block"; 
+          return;
+        }
+
+        const lowerType = type.toLowerCase();
+        const iframe = document.getElementById("mediaIframe");
+
+        // 1. จัดการรูปภาพ (ความละเอียดสูง 2K/4K)
+        if (lowerType.includes("image")) {
+          const img = document.getElementById("mediaImage");
+          let cleanUrl = url;
+          if (cleanUrl.includes("id=")) {
+            const fileId = cleanUrl.split("id=")[1].split("&")[0];
+            cleanUrl = `https://lh3.googleusercontent.com/d/${fileId}`;
+          }
+          if (!cleanUrl.includes("=s")) cleanUrl += "=s2560";
+          img.src = cleanUrl; 
+          img.style.display = "block";
+        } 
+        // ==========================================
+        // 2. จัดการ YouTube (ถอด mute=1 ออก เพื่อให้เสียงดังอัตโนมัติ)
+        // ==========================================
+        else if (lowerType.includes("youtube") || url.includes("youtube.com") || url.includes("youtu.be")) {
+          let videoId = "";
+          if (url.includes("youtu.be/")) videoId = url.split("youtu.be/")[1].split("?")[0];
+          else if (url.includes("watch?v=")) videoId = url.split("watch?v=")[1].split("&")[0];
+          else if (url.includes("/embed/")) videoId = url.split("/embed/")[1].split("?")[0];
+
+          // ใช้ autoplay=1 อย่างเดียว (ไม่มี mute=1) เสียงจะออกทันทีที่ได้รับสัญญาณ
+          const embedUrl = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&enablejsapi=1&rel=0&modestbranding=1`;
+          
+          iframe.src = embedUrl;
+          iframe.style.display = "block";
+        }
+        // ==========================================
+        // 3. จัดการวิดีโอจาก Google Drive (ถอด mute=1 ออก เพื่อให้เสียงดังอัตโนมัติ)
+        // ==========================================
+        else if (lowerType.includes("video")) {
+          let videoUrl = url;
+          if (videoUrl.includes("id=")) {
+            const fileId = videoUrl.split("id=")[1].split("&")[0];
+            videoUrl = `https://drive.google.com/file/d/${fileId}/preview`;
+          } else if (videoUrl.includes("/view")) {
+            videoUrl = videoUrl.replace("/view", "/preview");
+          }
+          
+          // ใช้ autoplay=1 อย่างเดียว เพื่อปล่อยสตรีมเสียงออกลำโพง
+          const driveEmbedUrl = videoUrl.includes("?") ? `${videoUrl}&autoplay=1` : `${videoUrl}?autoplay=1`;
+          
+          iframe.src = driveEmbedUrl;
+          iframe.style.display = "block";
+        } 
+        // 4. จัดการ Canva และ Web URL ทั่วไป
+        else if (lowerType.includes("canva") || lowerType === "text/html" || url.startsWith("http")) {
+          iframe.src = url; 
+          iframe.style.display = "block";
+        } 
+        // 5. จัดการ PDF
+        else if (lowerType.includes("pdf")) {
+          this.renderPDF(url, slidePage);
+        } else {
+          document.getElementById("idleScreen").style.display = "block";
+        }
+      }
+
+      hideAllMedia() {
+        document.getElementById("mediaImage").style.display = "none";
+        document.getElementById("mediaVideo").style.display = "none";
+        document.getElementById("mediaVideo").pause();
+        document.getElementById("pdfCanvas").style.display = "none";
+        
+        const iframe = document.getElementById("mediaIframe");
+        iframe.style.display = "none";
+        // [แก้บั๊ก Unsafe attempt to load file://] เปลี่ยนไปใช้ about:blank เพื่อล้างสตรีมวิดีโอ/เสียง อย่างปลอดภัย
+        iframe.src = "about:blank"; 
+      }
+
+      async renderPDF(url, pageNumber) {
+        const canvas = document.getElementById("pdfCanvas");
+        canvas.style.display = "block";
+        const ctx = canvas.getContext("2d");
+        try {
+          if (!this.pdfDoc || this.lastPdfUrl !== url) {
+            this.pdfDoc = await pdfjsLib.getDocument(url).promise;
+            this.lastPdfUrl = url;
+          }
+          const page = await this.pdfDoc.getPage(pageNumber || 1);
+          const viewport = page.getViewport({ scale: 2.0 });
+          canvas.height = viewport.height; canvas.width = viewport.width;
+          await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+        } catch (err) { console.error("PDF Render Error:", err); }
+      }
+
+      hideAllMedia() {
+        document.getElementById("mediaImage").style.display = "none";
+        document.getElementById("mediaVideo").style.display = "none";
+        document.getElementById("mediaVideo").pause();
+        document.getElementById("pdfCanvas").style.display = "none";
+        
+        const iframe = document.getElementById("mediaIframe");
+        iframe.style.display = "none";
+        iframe.removeAttribute("src"); // ล้าง src เพื่อตัดสัญญาณวิดีโอ/เสียง
+      }
+
+      setupOfflineFailover() {
+        window.addEventListener("offline", () => {
+          document.getElementById("connectionStatus").style.color = "#ffc107";
+          document.getElementById("connectionStatus").textContent = "● Offline Mode";
+          this.loadOfflineCache();
+        });
+      }
+
+      loadOfflineCache() {
+        const cachedType = localStorage.getItem("last_media_type");
+        const cachedUrl = localStorage.getItem("last_media_url");
+        if (cachedType && cachedUrl) this.renderMedia(cachedType, cachedUrl, 1);
+      }
+
+      goFullscreen() {
+        const elem = document.documentElement;
+        if (elem.requestFullscreen) elem.requestFullscreen();
+        else if (elem.webkitRequestFullscreen) elem.webkitRequestFullscreen();
+      }
+    }
+
+    const displayApp = new DisplayApplication();
+  </script>
+</body>
+</html>
