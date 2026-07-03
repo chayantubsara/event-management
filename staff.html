@@ -543,23 +543,35 @@
         const videoCard = document.getElementById("videoControllerCard");
         
         const type = item.type ? item.type.toLowerCase() : "";
-
-        // ถ้าเป็น Slide / PDF เปิดรีโมทสไลด์
-        if (type.includes("presentation") || type.includes("pdf")) {
+        
+        // ✅ แก้ไข: ตรวจสอบประเภทไฟล์ให้ครบถ้วน
+        if (type.includes("presentation") || 
+            type.includes("pdf") || 
+            type.includes("google") || 
+            type.includes("slides") ||
+            item.title?.includes("Slide") ||
+            item.title?.includes("PDF")) {
+          // แสดงรีโมท Slide
           slideCard.style.display = "block"; 
           videoCard.style.display = "none";
           this.currentSlideIndex = 1; 
           this.updateSlideUI();
+          console.log("📊 โหมด Slide/PDF - สามารถใช้ next/previous ได้");
         } 
-        // ถ้าเป็น Video หรือ YouTube เปิดรีโมทวิดีโอ
-        else if (type.includes("video") || type.includes("youtube") || item.url?.includes("youtube") || item.url?.includes("youtu.be")) {
+        else if (type.includes("video") || 
+                 type.includes("youtube") || 
+                 item.url?.includes("youtube") || 
+                 item.url?.includes("youtu.be")) {
+          // แสดงรีโมท Video
           slideCard.style.display = "none"; 
           videoCard.style.display = "block";
+          console.log("🎬 โหมด Video - สามารถใช้ play/pause ได้");
         } 
-        // สื่ออื่นๆ ซ่อนรีโมททั้งหมด
         else { 
+          // สื่ออื่นๆ ซ่อนรีโมททั้งหมด
           slideCard.style.display = "none"; 
           videoCard.style.display = "none";
+          console.log("📁 สื่อประเภทอื่น - ไม่มีการควบคุมเพิ่มเติม");
         }
       }
 
@@ -567,20 +579,30 @@
         if (!this.selectedMediaForPresent) return alert("กรุณาเลือกรายการจาก Playlist ก่อนกดนำเสนอ");
         const target = document.getElementById("selTargetDisplay").value;
         const payload = {
-          currentMediaTitle: this.selectedMediaForPresent.title, currentMediaType: this.selectedMediaForPresent.type, currentMediaUrl: this.selectedMediaForPresent.url, currentSlide: this.currentSlideIndex, status: "presenting", isPaused: false, updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+          currentMediaTitle: this.selectedMediaForPresent.title, 
+          currentMediaType: this.selectedMediaForPresent.type, 
+          currentMediaUrl: this.selectedMediaForPresent.url, 
+          currentSlide: this.currentSlideIndex, 
+          status: "presenting", 
+          isPaused: false, 
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
         };
 
         if (target === "ASSIGNED_ALL") {
           const assigned = this.currentStaff.assignedDisplays || [];
           assigned.forEach(id => db.collection("displays").doc(id).update(payload));
-        } else { await db.collection("displays").doc(target).update(payload); }
+        } else { 
+          await db.collection("displays").doc(target).update(payload); 
+        }
       }
 
       async pausePresentation() {
         const target = document.getElementById("selTargetDisplay").value;
         if (target === "ASSIGNED_ALL") {
           this.currentStaff.assignedDisplays.forEach(id => db.collection("displays").doc(id).update({ isPaused: true }));
-        } else { await db.collection("displays").doc(target).update({ isPaused: true }); }
+        } else { 
+          await db.collection("displays").doc(target).update({ isPaused: true }); 
+        }
       }
 
       async stopPresentation() {
@@ -588,32 +610,70 @@
         const payload = { status: "normal", currentMediaTitle: "ไม่มีการนำเสนอ", currentMediaUrl: "" };
         if (target === "ASSIGNED_ALL") {
           this.currentStaff.assignedDisplays.forEach(id => db.collection("displays").doc(id).update(payload));
-        } else { await db.collection("displays").doc(target).update(payload); }
-      }
-
-      /**
-       * ส่งคำสั่งควบคุมวิดีโอแบบเรียลไทม์ไปยังหน้าจอ Display
-       */
-      async sendVideoControl(action) {
-        const target = document.getElementById("selTargetDisplay").value;
-        const controlPayload = {
-          mediaControl: {
-            action: action, // 'play', 'pause', 'seek_forward', 'seek_backward'
-            timestamp: Date.now() // ใช้ timestamp ปัจจุบันเพื่อให้หน้าจอนับเป็นคำสั่งใหม่เสมอ
-          }
-        };
-
-        if (target === "ASSIGNED_ALL") {
-          const assigned = this.currentStaff.assignedDisplays || [];
-          assigned.forEach(id => db.collection("displays").doc(id).update(controlPayload));
         } else { 
-          await db.collection("displays").doc(target).update(controlPayload); 
+          await db.collection("displays").doc(target).update(payload); 
         }
       }
 
-      async prevSlide() { if (this.currentSlideIndex > 1) { this.currentSlideIndex--; this.updateSlideUI(); this.presentCurrentSelected(); } }
-      async nextSlide() { this.currentSlideIndex++; this.updateSlideUI(); this.presentCurrentSelected(); }
-      updateSlideUI() { document.getElementById("slideCounter").textContent = `หน้าที่ ${this.currentSlideIndex}`; }
+      /**
+       * [แก้ไข] ส่งคำสั่งควบคุมวิดีโอแบบเรียลไทม์ไปยังหน้าจอ Display
+       */
+      async sendVideoControl(action) {
+        const target = document.getElementById("selTargetDisplay").value;
+        
+        // ✅ เช็คว่าเลือกจอแล้วหรือเปล่า
+        if (!target) {
+          alert("⚠️ กรุณาเลือกจอที่ต้องการควบคุมก่อน");
+          return;
+        }
+        
+        const controlPayload = {
+          mediaControl: {
+            action: action, // 'play', 'pause', 'seek_forward', 'seek_backward'
+            timestamp: Date.now() // ต้องส่ง timestamp เสมอเพื่อให้ display รู้ว่าเป็นคำสั่งใหม่
+          }
+        };
+
+        try {
+          if (target === "ASSIGNED_ALL") {
+            const assigned = this.currentStaff.assignedDisplays || [];
+            if (assigned.length === 0) {
+              alert("⚠️ ไม่มีจอที่ได้รับมอบหมาย");
+              return;
+            }
+            for (const id of assigned) {
+              await db.collection("displays").doc(id).update(controlPayload);
+            }
+            console.log(`✅ ส่งคำสั่ง ${action} ไปยังทั้งหมด`);
+          } else { 
+            await db.collection("displays").doc(target).update(controlPayload);
+            console.log(`✅ ส่งคำสั่ง ${action} ไปยัง ${target}`);
+          }
+        } catch (err) {
+          console.error("❌ เกิดข้อผิดพลาด:", err);
+          alert("ไม่สามารถส่งคำสั่งได้: " + err.message);
+        }
+      }
+
+      async prevSlide() { 
+        if (this.currentSlideIndex > 1) { 
+          this.currentSlideIndex--; 
+          this.updateSlideUI(); 
+          await this.presentCurrentSelected();
+          console.log("⬅️ ไปหน้าที่:", this.currentSlideIndex);
+        }
+      }
+      
+      async nextSlide() { 
+        this.currentSlideIndex++; 
+        this.updateSlideUI(); 
+        await this.presentCurrentSelected();
+        console.log("➡️ ไปหน้าที่:", this.currentSlideIndex);
+      }
+      
+      updateSlideUI() { 
+        document.getElementById("slideCounter").textContent = `หน้าที่ ${this.currentSlideIndex}`; 
+      }
 
       generateQRForm() {
         const url = window.location.origin + window.location.pathname.replace("staff.html", "index.html") + "?mode=upload";
